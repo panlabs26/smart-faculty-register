@@ -300,7 +300,7 @@ tr:hover td{background:rgba(91,110,245,0.05);}
 
         <div id="form-msg" class="msg"></div>
 
-        <label>Faculty <span class="auto-tag">●</span></label>
+        <label>Faculty <span class="auto-tag">●</span> <span id="faculty-hint" style="font-size:10px;color:var(--muted);text-transform:none;font-weight:400"></span></label>
         <select id="f-faculty" style="margin-bottom:10px">
           <option value="IS001">Prof. Neelakanth Karekar</option>
           <option value="IS002">Prof. Pandurang Upparamani</option>
@@ -720,6 +720,8 @@ window.addEventListener("fbReady", () => {
     document.getElementById("app").classList.remove("hidden");
     // Pre-select faculty in form
     document.getElementById("f-faculty").value = fid;
+    // Lock faculty dropdown for non-HOD — they can only enter for themselves
+    document.getElementById("f-faculty").disabled = (fid !== "HOD");
     // HOD sees faculty filter
     if(fid === "HOD"){
       document.getElementById("fil-faculty").style.display = "block";
@@ -902,6 +904,25 @@ window.addEventListener("fbReady", () => {
       }
     }
 
+    // ── FACULTY NAME detection from OCR text ──
+    const FACULTY_NAMES = {
+      IS001:["Neelakanth Karekar","Neelakanth","Karekar","nkarekar"],
+      IS002:["Pandurang Upparamani","Pandurang","Upparamani","upparamani"],
+      IS003:["Sudhir Madi","Sudhir","sudhirmadi"],
+      IS004:["Kadayya Mathad","Kadayya","Mathad","mathadks"],
+      IS005:["Anusha Chogund","Anusha","Chogund","apcogund"],
+      IS006:["Rakesh Kadkol","Rakesh","Kadkol","rjkadkol"],
+      IS007:["Vaibhav Chavan","Vaibhav","Chavan"],
+      IS008:["Asharani","Asha Rani"],
+    };
+    let detectedFaculty = "";
+    for(const [id, names] of Object.entries(FACULTY_NAMES)){
+      if(names.some(n => text.toLowerCase().includes(n.toLowerCase()))){
+        detectedFaculty = id;
+        break;
+      }
+    }
+
     // Fill form
     setValue("f-type",    type);
     setValue("f-mode",    mode);
@@ -911,7 +932,7 @@ window.addEventListener("fbReady", () => {
     document.getElementById("f-year").value  = year;
     setValue("f-acyear",  acYear);
 
-    showFormCard();
+    showFormCard(detectedFaculty);
   }
 
   function setValue(id, val){
@@ -926,9 +947,22 @@ window.addEventListener("fbReady", () => {
     }
   }
 
-  function showFormCard(){
+  function showFormCard(detectedFaculty){
     document.getElementById("form-card").style.display = "block";
-    document.getElementById("f-faculty").value = currentUser === "HOD" ? "IS001" : currentUser;
+    // Priority: 1) OCR-detected name, 2) logged-in faculty, 3) IS001 for HOD
+    const fSel = document.getElementById("f-faculty");
+    if(detectedFaculty){
+      fSel.value = detectedFaculty;
+      if(detectedFaculty !== currentUser && currentUser !== "HOD"){
+        toast("👤 Detected: "+FACULTY[detectedFaculty]+" — please verify", "toast-info", 4000);
+      }
+    } else {
+      fSel.value = currentUser === "HOD" ? "IS001" : currentUser;
+    }
+    // HOD: always keep dropdown editable (already is — just ensure no disabled attr)
+    fSel.disabled = false;
+    const hint = document.getElementById("faculty-hint");
+    if(hint) hint.textContent = currentUser==="HOD" ? "(HOD mode — assign to any faculty)" : "";
     document.getElementById("f-filelink").textContent = currentFileUrl ? "🔗 "+currentFileUrl : "No link added";
   }
 
@@ -947,15 +981,36 @@ window.addEventListener("fbReady", () => {
   };
 
   window.showFormManual = function(){
-    currentFile = null; currentFileUrl = "";
+    currentFile = null;
+    if(!currentFileUrl) currentFileUrl = "";
     document.getElementById("f-faculty").value = currentUser === "HOD" ? "IS001" : currentUser;
-    document.getElementById("f-filelink").textContent = "No link added";
+    document.getElementById("f-faculty").disabled = false;
+    document.getElementById("f-filelink").textContent = currentFileUrl ? "🔗 "+currentFileUrl : "No link added";
     document.getElementById("form-card").style.display = "block";
   };
 
   // ── SAVE ACTIVITY ─────────────────────────────────────────────────────────
   window.saveActivity = async function(){
     const btn = document.getElementById("save-btn");
+
+    // ── Duplicate check ──
+    const newTitle  = document.getElementById("f-title").value.trim().toLowerCase();
+    const newYear   = document.getElementById("f-year").value.trim();
+    const newFacId  = document.getElementById("f-faculty").value;
+    const duplicate = allActivities.find(a =>
+      a.facultyId === newFacId &&
+      a.year      === newYear  &&
+      a.title?.toLowerCase().replace(/\s+/g," ").includes(newTitle.slice(0,20))
+    );
+    if(duplicate){
+      const go = confirm(
+        "⚠️ Possible duplicate detected!\n\n" +
+        "Existing: \"" + duplicate.title + "\" (" + duplicate.year + ")\n\n" +
+        "Save anyway?"
+      );
+      if(!go) return;
+    }
+
     btn.disabled = true; btn.textContent = "Saving...";
 
     try {
