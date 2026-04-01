@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FAMS · ISE Dept · KLS GIT</title>
+
+<!-- Tesseract OCR -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<!-- xlsx-js-style for Excel export -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<!-- PDF.js for PDF rendering -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<style>
+/* ── RESET & ROOT ─────────────────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#060610; --surface:#0e0e1c; --card:#13132a; --border:#2a2a4a;
+  --accent:#5b6ef5; --accent2:#22d3a5; --danger:#f55b5b; --warn:#f5c95b;
+  --text:#e8e8f4; --muted:#6868a0; --green:#22d3a5; --blue:#5b6ef5;
+}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* ── TYPOGRAPHY ───────────────────────────────────────────────────────────── */
+h1{font-size:22px;font-weight:700;}
+h2{font-size:16px;font-weight:700;margin-bottom:12px;}
+h3{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:12px;}
+label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);display:block;margin-bottom:4px;}
+
+/* ── LAYOUT ───────────────────────────────────────────────────────────────── */
+header{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:12px 24px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100;
+}
+.logo-area{display:flex;align-items:center;gap:12px;}
+.logo{width:36px;height:36px;background:var(--accent);border-radius:8px;
+  display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;}
+.header-right{display:flex;align-items:center;gap:12px;}
+.user-badge{font-size:12px;color:var(--muted);}
+.user-badge span{color:var(--accent2);font-weight:600;}
+
+.main-layout{display:grid;grid-template-columns:420px 1fr;gap:0;min-height:calc(100vh - 57px);}
+.left-panel{background:var(--surface);border-right:1px solid var(--border);padding:20px;overflow-y:auto;max-height:calc(100vh - 57px);}
+.right-panel{padding:20px;overflow-y:auto;max-height:calc(100vh - 57px);}
+
+@media(max-width:900px){
+  .main-layout{grid-template-columns:1fr;}
+  .left-panel,.right-panel{max-height:none;}
+}
+
+/* ── CARDS ────────────────────────────────────────────────────────────────── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px;}
+
+/* ── INPUTS ───────────────────────────────────────────────────────────────── */
+input,select,textarea{
+  width:100%;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;color:var(--text);font-family:inherit;font-size:13px;
+  padding:9px 12px;outline:none;transition:border-color 0.2s;margin-bottom:10px;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);}
+textarea{resize:vertical;min-height:80px;}
+input[type="file"]{padding:6px;cursor:pointer;}
+
+/* ── BUTTONS ──────────────────────────────────────────────────────────────── */
+button{
+  font-family:inherit;font-size:13px;font-weight:600;
+  border:none;border-radius:8px;padding:10px 18px;
+  cursor:pointer;transition:opacity 0.15s,transform 0.1s;
+}
+button:hover{opacity:0.88;}
+button:active{transform:scale(0.97);}
+button:disabled{opacity:0.4;cursor:not-allowed;}
+.btn-accent{background:var(--accent);color:#fff;}
+.btn-green{background:var(--green);color:#060610;}
+.btn-danger{background:var(--danger);color:#fff;}
+.btn-warn{background:var(--warn);color:#060610;}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+.btn-blue{background:var(--blue);color:#fff;}
+.btn-sm{padding:6px 12px;font-size:12px;}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+
+/* ── UPLOAD ZONE ──────────────────────────────────────────────────────────── */
+#drop-zone{
+  border:2px dashed var(--border);border-radius:12px;padding:28px 16px;
+  text-align:center;cursor:pointer;transition:border-color 0.2s,background 0.2s;
+  margin-bottom:14px;
+}
+#drop-zone.over{border-color:var(--accent2);background:rgba(34,211,165,0.05);}
+#drop-zone .dz-icon{font-size:32px;margin-bottom:8px;}
+#drop-zone p{font-size:13px;color:var(--muted);}
+#drop-zone input{display:none;}
+
+/* ── OCR PROGRESS ─────────────────────────────────────────────────────────── */
+#ocr-progress{display:none;margin-bottom:12px;}
+.progress-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:6px;}
+.progress-fill{height:100%;background:var(--accent2);border-radius:3px;width:0%;transition:width 0.3s;}
+.progress-label{font-size:11px;color:var(--muted);margin-bottom:4px;}
+
+/* ── STATUS MESSAGES ──────────────────────────────────────────────────────── */
+.msg{font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:none;}
+.msg.show{display:block;}
+.msg-ok{background:rgba(34,211,165,0.1);color:var(--accent2);border:1px solid rgba(34,211,165,0.25);}
+.msg-err{background:rgba(245,91,91,0.1);color:var(--danger);border:1px solid rgba(245,91,91,0.25);}
+.msg-info{background:rgba(91,110,245,0.1);color:var(--accent);border:1px solid rgba(91,110,245,0.25);}
+
+/* ── OCR RAW TEXT ─────────────────────────────────────────────────────────── */
+#ocr-raw-wrap{display:none;margin-bottom:12px;}
+#ocr-raw{font-size:11px;font-family:monospace;max-height:100px;overflow-y:auto;
+  background:#0a0a18;border:1px solid var(--border);border-radius:8px;
+  padding:8px;color:#aaaacc;line-height:1.5;}
+
+/* ── FORM GRID ────────────────────────────────────────────────────────────── */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.form-field{margin-bottom:2px;}
+.auto-tag{font-size:10px;color:var(--accent2);margin-left:4px;}
+
+/* ── FILE PREVIEW ─────────────────────────────────────────────────────────── */
+#file-preview{display:none;margin-bottom:12px;text-align:center;}
+#file-preview img{max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);}
+#file-preview canvas{max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);}
+
+/* ── LOGIN ────────────────────────────────────────────────────────────────── */
+#login-screen{
+  display:flex;align-items:center;justify-content:center;
+  min-height:100vh;background:var(--bg);
+}
+.login-box{
+  background:var(--card);border:1px solid var(--border);border-radius:16px;
+  padding:40px 36px;width:360px;text-align:center;
+}
+.login-box .logo-lg{font-size:48px;margin-bottom:16px;}
+.login-box h2{margin-bottom:6px;font-size:22px;}
+.login-box p{font-size:13px;color:var(--muted);margin-bottom:24px;}
+.login-err{font-size:12px;color:var(--danger);margin-top:-6px;margin-bottom:12px;display:none;}
+
+/* ── DASHBOARD TABLE ──────────────────────────────────────────────────────── */
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;}
+.filter-row select,.filter-row input{width:auto;flex:1;min-width:120px;margin-bottom:0;}
+.filter-row button{flex-shrink:0;}
+
+.tbl-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{background:#1f3864;color:#fff;padding:8px 10px;text-align:left;white-space:nowrap;}
+td{padding:7px 10px;border-bottom:1px solid #1a1a2e;vertical-align:top;}
+tr:nth-child(even) td{background:rgba(255,255,255,0.02);}
+tr:hover td{background:rgba(91,110,245,0.05);}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600;}
+.badge-workshop{background:rgba(34,211,165,0.15);color:var(--accent2);}
+.badge-fdp{background:rgba(91,110,245,0.15);color:var(--blue);}
+.badge-conference{background:rgba(245,201,91,0.15);color:var(--warn);}
+.badge-research{background:rgba(245,91,91,0.15);color:var(--danger);}
+.badge-achievement{background:rgba(255,150,50,0.15);color:#ff9632;}
+.badge-seminar{background:rgba(150,91,245,0.15);color:#966bf5;}
+.badge-phd{background:rgba(255,50,150,0.15);color:#ff3296;}
+.badge-other{background:rgba(104,104,160,0.15);color:var(--muted);}
+
+.tbl-actions{display:flex;gap:4px;}
+.tbl-actions button{padding:3px 8px;font-size:11px;}
+
+/* ── STATS ROW ────────────────────────────────────────────────────────────── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+.stat-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;}
+.stat-num{font-size:28px;font-weight:700;color:var(--accent2);font-family:monospace;}
+.stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;}
+
+/* ── REPORT OUTPUT ────────────────────────────────────────────────────────── */
+#report-text{font-size:13px;line-height:1.8;background:#0a0a18;border:1px solid var(--border);
+  border-radius:8px;padding:14px;max-height:200px;overflow-y:auto;white-space:pre-wrap;display:none;}
+
+/* ── MODAL ────────────────────────────────────────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(6,6,16,0.85);
+  display:none;place-items:center;z-index:500;backdrop-filter:blur(4px);}
+.modal-overlay.show{display:grid;}
+.modal-box{background:var(--card);border:1px solid var(--border);border-radius:16px;
+  padding:28px;width:min(500px,90vw);max-height:80vh;overflow-y:auto;}
+
+/* ── TOAST ────────────────────────────────────────────────────────────────── */
+#toast-box{position:fixed;top:24px;left:50%;transform:translateX(-50%);
+  z-index:9999;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;}
+.toast{min-width:200px;padding:12px 22px;border-radius:12px;font-size:13px;font-weight:600;
+  text-align:center;box-shadow:0 8px 28px rgba(0,0,0,0.32);
+  opacity:0;transform:translateY(-14px) scale(0.93);
+  transition:opacity 0.25s,transform 0.25s;pointer-events:none;}
+.toast.show{opacity:1;transform:translateY(0) scale(1);}
+.toast-ok{background:#00c97a;color:#fff;}
+.toast-err{background:#f55b5b;color:#fff;}
+.toast-info{background:#5b6ef5;color:#fff;}
+
+/* ── SECTION TABS ─────────────────────────────────────────────────────────── */
+.section-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;}
+.section-tab{padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;
+  border:none;background:transparent;color:var(--muted);font-family:inherit;
+  border-bottom:2px solid transparent;transition:color 0.15s;}
+.section-tab.active{color:var(--accent2);border-bottom-color:var(--accent2);}
+
+/* ── SCROLLBAR ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+.hidden{display:none!important;}
+.full-btn{width:100%;}
+</style>
+</head>
+<body>
+
+<div id="toast-box"></div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     LOGIN SCREEN
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="logo-lg">🎓</div>
+    <h2>FAMS</h2>
+    <p>Faculty Activity Management System<br>ISE Department · KLS Gogte Institute of Technology</p>
+    <label>Select Faculty</label>
+    <select id="login-faculty" style="margin-bottom:12px">
+      <option value="">-- Select your name --</option>
+      <option value="IS001">IS001 · Prof. Neelakanth Karekar</option>
+      <option value="IS002">IS002 · Prof. Pandurang Upparamani</option>
+      <option value="IS003">IS003 · Prof. Sudhir Madi</option>
+      <option value="IS004">IS004 · Prof. Kadayya S Mathad</option>
+      <option value="IS005">IS005 · Prof. Anusha P Chogund</option>
+      <option value="IS006">IS006 · Prof. Rakesh J Kadkol</option>
+      <option value="IS007">IS007 · Prof. Vaibhav M Chavan</option>
+      <option value="IS008">IS008 · Prof. Asharani</option>
+      <option value="HOD">HOD · Head of Department (All Faculty)</option>
+    </select>
+    <label>Password</label>
+    <input type="password" id="login-pw" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-err" id="login-err">Incorrect password. Try again.</div>
+    <button class="btn-accent full-btn" onclick="doLogin()">Login →</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MAIN APP
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="app" class="hidden">
+
+  <header>
+    <div class="logo-area">
+      <div class="logo">FA</div>
+      <div>
+        <div style="font-size:15px;font-weight:700">FAMS · ISE Department</div>
+        <div style="font-size:11px;color:var(--muted)">KLS Gogte Institute of Technology, Belagavi</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="user-badge">Logged in as <span id="hdr-name"></span></div>
+      <button class="btn-ghost btn-sm" onclick="doLogout()">Logout</button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+
+    <!-- ══ LEFT PANEL — ADD ACTIVITY ══ -->
+    <div class="left-panel">
+      <h2>➕ Add New Activity</h2>
+
+      <!-- Step 1: Upload / OCR -->
+      <div class="card">
+        <h3>Step 1 · Certificate (OCR or Drive Link)</h3>
+
+        <!-- Drive link input -->
+        <label>Google Drive Link <span style="color:var(--muted);font-weight:400;text-transform:none">(paste shareable link)</span></label>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <input type="text" id="drive-link" placeholder="https://drive.google.com/..." style="margin-bottom:0;flex:1">
+          <button class="btn-accent btn-sm" onclick="saveDriveLink()" style="flex-shrink:0">Save Link</button>
+        </div>
+        <div id="drive-link-status" style="font-size:11px;color:var(--accent2);margin-bottom:10px;display:none"></div>
+
+        <div style="text-align:center;font-size:11px;color:var(--muted);margin-bottom:10px">— or scan certificate with OCR —</div>
+
+        <!-- Drop zone for OCR -->
+        <div id="drop-zone" onclick="document.getElementById('cert-file').click()"
+             ondragover="dzOver(event)" ondragleave="dzLeave()" ondrop="dzDrop(event)">
+          <div class="dz-icon">📷</div>
+          <p>Drop image/PDF for OCR auto-fill<br><span style="color:var(--accent);font-size:12px">click to browse · JPG, PNG, PDF</span></p>
+          <input type="file" id="cert-file" accept=".pdf,.jpg,.jpeg,.png" onchange="handleFile(this.files[0])">
+        </div>
+        <div id="file-preview"></div>
+        <div id="ocr-progress">
+          <div class="progress-label" id="ocr-label">Running OCR...</div>
+          <div class="progress-bar"><div class="progress-fill" id="ocr-bar"></div></div>
+        </div>
+        <div id="ocr-msg" class="msg"></div>
+        <div id="ocr-raw-wrap">
+          <label>OCR Raw Text <span style="color:var(--muted);font-weight:400">(for reference)</span></label>
+          <div id="ocr-raw"></div>
+        </div>
+      </div>
+
+      <!-- Step 2: Form -->
+      <div class="card" id="form-card" style="display:none">
+        <h3>Step 2 · Verify & Edit Details <span style="color:var(--accent2);font-size:10px;text-transform:none;letter-spacing:0">Auto-filled · correct anything</span></h3>
+
+        <div id="form-msg" class="msg"></div>
+
+        <label>Faculty <span class="auto-tag">●</span></label>
+        <select id="f-faculty" style="margin-bottom:10px">
+          <option value="IS001">Prof. Neelakanth Karekar</option>
+          <option value="IS002">Prof. Pandurang Upparamani</option>
+          <option value="IS003">Prof. Sudhir Madi</option>
+          <option value="IS004">Prof. Kadayya S Mathad</option>
+          <option value="IS005">Prof. Anusha P Chogund</option>
+          <option value="IS006">Prof. Rakesh J Kadkol</option>
+          <option value="IS007">Prof. Vaibhav M Chavan</option>
+          <option value="IS008">Prof. Asharani</option>
+        </select>
+
+        <label>Activity Type <span class="auto-tag">●</span></label>
+        <select id="f-type" style="margin-bottom:10px">
+          <option value="Workshop">Workshop</option>
+          <option value="FDP">FDP (Faculty Development Program)</option>
+          <option value="Conference">Conference</option>
+          <option value="Seminar">Seminar</option>
+          <option value="Research Paper">Research Paper</option>
+          <option value="Achievement">Achievement</option>
+          <option value="PhD">PhD Completion</option>
+          <option value="Other">Other</option>
+        </select>
+
+        <label>Mode <span class="auto-tag">●</span></label>
+        <select id="f-mode" style="margin-bottom:10px">
+          <option value="Attended">Attended</option>
+          <option value="Presented">Presented</option>
+          <option value="Organized">Organized</option>
+          <option value="Completed">Completed</option>
+          <option value="Published">Published</option>
+          <option value="Received">Received</option>
+        </select>
+
+        <label>Title <span class="auto-tag">●</span></label>
+        <input type="text" id="f-title" placeholder="Title of event / paper / achievement">
+
+        <label>Organizer / Institution <span class="auto-tag">●</span></label>
+        <input type="text" id="f-org" placeholder="Organized by / Institution name">
+
+        <div class="form-row">
+          <div class="form-field">
+            <label>Month <span class="auto-tag">●</span></label>
+            <select id="f-month" style="margin-bottom:10px">
+              <option value="">-- Month --</option>
+              <option>January</option><option>February</option><option>March</option>
+              <option>April</option><option>May</option><option>June</option>
+              <option>July</option><option>August</option><option>September</option>
+              <option>October</option><option>November</option><option>December</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Year <span class="auto-tag">●</span></label>
+            <input type="number" id="f-year" placeholder="2026" min="2000" max="2050" style="margin-bottom:10px">
+          </div>
+        </div>
+
+        <label>Duration (optional)</label>
+        <input type="text" id="f-duration" placeholder="e.g. 2 days, 1 week">
+
+        <label>Academic Year <span class="auto-tag">●</span></label>
+        <select id="f-acyear" style="margin-bottom:10px">
+          <option value="2023-24">2023-24</option>
+          <option value="2024-25">2024-25</option>
+          <option value="2025-26" selected>2025-26</option>
+          <option value="2026-27">2026-27</option>
+        </select>
+
+        <label>Certificate Link <span style="color:var(--muted);font-weight:400;text-transform:none">(Google Drive)</span></label>
+        <div id="f-filelink" style="font-size:12px;color:var(--accent2);margin-bottom:10px;word-break:break-all">No link added</div>
+
+        <div class="btn-row">
+          <button class="btn-green" onclick="saveActivity()" id="save-btn">💾 Save Activity</button>
+          <button class="btn-ghost" onclick="resetForm()">✕ Cancel</button>
+        </div>
+      </div>
+
+      <!-- Manual entry without certificate -->
+      <div style="text-align:center;margin-top:8px">
+        <button class="btn-ghost btn-sm" onclick="showFormManual()">📝 Enter manually (no certificate)</button>
+      </div>
+    </div>
+
+    <!-- ══ RIGHT PANEL — DASHBOARD ══ -->
+    <div class="right-panel">
+
+      <!-- Stats -->
+      <div class="stats-row" id="stats-row">
+        <div class="stat-box"><div class="stat-num" id="st-total">0</div><div class="stat-lbl">Total</div></div>
+        <div class="stat-box"><div class="stat-num" id="st-workshop">0</div><div class="stat-lbl">Workshops/FDPs</div></div>
+        <div class="stat-box"><div class="stat-num" id="st-conf">0</div><div class="stat-lbl">Conferences</div></div>
+        <div class="stat-box"><div class="stat-num" id="st-paper">0</div><div class="stat-lbl">Papers/PhD</div></div>
+      </div>
+
+      <!-- Section tabs -->
+      <div class="section-tabs">
+        <button class="section-tab active" onclick="switchTab('activities',this)">📋 Activities</button>
+        <button class="section-tab" onclick="switchTab('reports',this)">📊 Reports</button>
+      </div>
+
+      <!-- ACTIVITIES TAB -->
+      <div id="tab-activities">
+        <!-- Filters -->
+        <div class="filter-row">
+          <select id="fil-faculty" onchange="applyFilters()" style="display:none">
+            <option value="">All Faculty</option>
+            <option value="IS001">Neelakanth Karekar</option>
+            <option value="IS002">Pandurang Upparamani</option>
+            <option value="IS003">Sudhir Madi</option>
+            <option value="IS004">Kadayya S Mathad</option>
+            <option value="IS005">Anusha P Chogund</option>
+            <option value="IS006">Rakesh J Kadkol</option>
+            <option value="IS007">Vaibhav M Chavan</option>
+            <option value="IS008">Asharani</option>
+          </select>
+          <select id="fil-type" onchange="applyFilters()">
+            <option value="">All Types</option>
+            <option>Workshop</option><option>FDP</option><option>Conference</option>
+            <option>Seminar</option><option>Research Paper</option>
+            <option>Achievement</option><option>PhD</option><option>Other</option>
+          </select>
+          <select id="fil-acyear" onchange="applyFilters()">
+            <option value="">All Years</option>
+            <option>2023-24</option><option>2024-25</option>
+            <option>2025-26</option><option>2026-27</option>
+          </select>
+          <select id="fil-mode" onchange="applyFilters()">
+            <option value="">All Modes</option>
+            <option>Attended</option><option>Presented</option>
+            <option>Organized</option><option>Completed</option>
+            <option>Published</option><option>Received</option>
+          </select>
+          <input type="text" id="fil-search" placeholder="Search title..." oninput="applyFilters()" style="margin-bottom:0">
+          <button class="btn-ghost btn-sm" onclick="clearFilters()">✕ Clear</button>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:12px;color:var(--muted)" id="result-count"></div>
+          <div class="btn-row" style="margin:0">
+            <button class="btn-green btn-sm" onclick="exportExcel()">📥 Export Excel</button>
+            <button class="btn-ghost btn-sm" onclick="generateReport()">📄 Copy Report</button>
+          </div>
+        </div>
+
+        <div class="tbl-wrap">
+          <table id="act-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Faculty</th>
+                <th>Type</th>
+                <th>Mode</th>
+                <th>Title</th>
+                <th>Organizer</th>
+                <th>Month/Year</th>
+                <th>Ac.Year</th>
+                <th>Cert</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="act-tbody">
+              <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:24px">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- REPORTS TAB -->
+      <div id="tab-reports" class="hidden">
+        <div class="card">
+          <h3>Query / Filter Report</h3>
+          <div class="form-row">
+            <div>
+              <label>Faculty</label>
+              <select id="rpt-faculty">
+                <option value="">All Faculty</option>
+                <option value="IS001">Neelakanth Karekar</option>
+                <option value="IS002">Pandurang Upparamani</option>
+                <option value="IS003">Sudhir Madi</option>
+                <option value="IS004">Kadayya S Mathad</option>
+                <option value="IS005">Anusha P Chogund</option>
+                <option value="IS006">Rakesh J Kadkol</option>
+                <option value="IS007">Vaibhav M Chavan</option>
+                <option value="IS008">Asharani</option>
+              </select>
+            </div>
+            <div>
+              <label>Activity Type</label>
+              <select id="rpt-type">
+                <option value="">All Types</option>
+                <option>Workshop</option><option>FDP</option><option>Conference</option>
+                <option>Seminar</option><option>Research Paper</option>
+                <option>Achievement</option><option>PhD</option><option>Other</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div>
+              <label>Mode</label>
+              <select id="rpt-mode">
+                <option value="">All Modes</option>
+                <option>Attended</option><option>Presented</option>
+                <option>Organized</option><option>Completed</option>
+                <option>Published</option><option>Received</option>
+              </select>
+            </div>
+            <div>
+              <label>Academic Year</label>
+              <select id="rpt-acyear">
+                <option value="">All Years</option>
+                <option>2023-24</option><option>2024-25</option>
+                <option>2025-26</option><option>2026-27</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div>
+              <label>Year (exact)</label>
+              <input type="number" id="rpt-year" placeholder="e.g. 2026">
+            </div>
+            <div>
+              <label>Month</label>
+              <select id="rpt-month">
+                <option value="">All Months</option>
+                <option>January</option><option>February</option><option>March</option>
+                <option>April</option><option>May</option><option>June</option>
+                <option>July</option><option>August</option><option>September</option>
+                <option>October</option><option>November</option><option>December</option>
+              </select>
+            </div>
+          </div>
+          <label>Title contains</label>
+          <input type="text" id="rpt-title" placeholder="e.g. AI-ML, Machine Learning...">
+          <div class="btn-row">
+            <button class="btn-accent" onclick="runReport()">🔍 Run Query</button>
+            <button class="btn-ghost" onclick="clearReport()">✕ Clear</button>
+          </div>
+        </div>
+
+        <div id="rpt-result" class="hidden">
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <h3 style="margin:0" id="rpt-count-label"></h3>
+              <div class="btn-row" style="margin:0">
+                <button class="btn-green btn-sm" onclick="exportReportExcel()">📥 Excel</button>
+                <button class="btn-ghost btn-sm" onclick="copyReportText()">📋 Copy Text</button>
+              </div>
+            </div>
+            <div id="report-text"></div>
+            <div class="tbl-wrap" style="margin-top:12px">
+              <table>
+                <thead>
+                  <tr><th>#</th><th>Faculty</th><th>Type</th><th>Mode</th><th>Title</th><th>Organizer</th><th>Month/Year</th></tr>
+                </thead>
+                <tbody id="rpt-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- right panel -->
+  </div><!-- main layout -->
+</div><!-- app -->
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal-box">
+    <h2 style="margin-bottom:16px">✏️ Edit Activity</h2>
+    <input type="hidden" id="edit-id">
+    <label>Faculty</label>
+    <select id="edit-faculty">
+      <option value="IS001">Prof. Neelakanth Karekar</option>
+      <option value="IS002">Prof. Pandurang Upparamani</option>
+      <option value="IS003">Prof. Sudhir Madi</option>
+      <option value="IS004">Prof. Kadayya S Mathad</option>
+      <option value="IS005">Prof. Anusha P Chogund</option>
+      <option value="IS006">Prof. Rakesh J Kadkol</option>
+      <option value="IS007">Prof. Vaibhav M Chavan</option>
+      <option value="IS008">Prof. Asharani</option>
+    </select>
+    <label>Type</label>
+    <select id="edit-type">
+      <option>Workshop</option><option>FDP</option><option>Conference</option>
+      <option>Seminar</option><option>Research Paper</option>
+      <option>Achievement</option><option>PhD</option><option>Other</option>
+    </select>
+    <label>Mode</label>
+    <select id="edit-mode">
+      <option>Attended</option><option>Presented</option><option>Organized</option>
+      <option>Completed</option><option>Published</option><option>Received</option>
+    </select>
+    <label>Title</label>
+    <input type="text" id="edit-title">
+    <label>Organizer</label>
+    <input type="text" id="edit-org">
+    <div class="form-row">
+      <div><label>Month</label>
+        <select id="edit-month">
+          <option value="">--</option>
+          <option>January</option><option>February</option><option>March</option>
+          <option>April</option><option>May</option><option>June</option>
+          <option>July</option><option>August</option><option>September</option>
+          <option>October</option><option>November</option><option>December</option>
+        </select>
+      </div>
+      <div><label>Year</label><input type="number" id="edit-year" min="2000" max="2050"></div>
+    </div>
+    <label>Duration</label>
+    <input type="text" id="edit-duration">
+    <label>Academic Year</label>
+    <select id="edit-acyear">
+      <option>2023-24</option><option>2024-25</option>
+      <option>2025-26</option><option>2026-27</option>
+    </select>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn-green" onclick="saveEdit()">💾 Save Changes</button>
+      <button class="btn-ghost" onclick="closeEdit()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDK (ES Module) -->
+<script type="module">
+import { initializeApp }     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy }
+                              from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyAzWUASjy3AyRt2-lYRotvBU3QbjqdsF58",
+  authDomain:        "smart-faculty-register.firebaseapp.com",
+  projectId:         "smart-faculty-register",
+  storageBucket:     "smart-faculty-register.firebasestorage.app",
+  messagingSenderId: "1074237008173",
+  appId:             "1:1074237008173:web:dd19249d2c0cdd80554ba4"
+};
+
+const app     = initializeApp(firebaseConfig);
+const db      = getFirestore(app);
+const COL     = "activities";
+
+// ── FACULTY MAP ────────────────────────────────────────────────────────────
+const FACULTY = {
+  IS001:"Prof. Neelakanth Karekar",
+  IS002:"Prof. Pandurang Upparamani",
+  IS003:"Prof. Sudhir Madi",
+  IS004:"Prof. Kadayya S Mathad",
+  IS005:"Prof. Anusha P Chogund",
+  IS006:"Prof. Rakesh J Kadkol",
+  IS007:"Prof. Vaibhav M Chavan",
+  IS008:"Prof. Asharani",
+  HOD:"HOD (All Faculty)"
+};
+
+const PASSWORD = "ise123";
+const MONTHS = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"];
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+let currentUser = null;
+let currentFile = null;
+let currentFileUrl = "";
+let allActivities = [];
+let filteredActivities = [];
+let reportActivities = [];
+
+// expose to global
+window._fb = { db, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy, collection, COL };
+window.dispatchEvent(new Event("fbReady"));
+</script>
+
+<script>
+// ── WAIT FOR FIREBASE ──────────────────────────────────────────────────────
+window.addEventListener("fbReady", () => {
+  const { db, addDoc, getDocs, updateDoc, deleteDoc, doc,
+          query, orderBy, collection, COL } = window._fb;
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  const FACULTY = {
+    IS001:"Prof. Neelakanth Karekar",
+    IS002:"Prof. Pandurang Upparamani",
+    IS003:"Prof. Sudhir Madi",
+    IS004:"Prof. Kadayya S Mathad",
+    IS005:"Prof. Anusha P Chogund",
+    IS006:"Prof. Rakesh J Kadkol",
+    IS007:"Prof. Vaibhav M Chavan",
+    IS008:"Prof. Asharani",
+    HOD:"HOD (All Faculty)"
+  };
+
+  const PASSWORD = "ise123";
+  let currentUser = null, currentFile = null, currentFileUrl = "";
+  let allActivities = [], filteredActivities = [], reportActivities = [];
+
+  // ── TOAST ────────────────────────────────────────────────────────────────
+  function toast(msg, type="toast-info", dur=2800){
+    const t = document.createElement("div");
+    t.className = "toast " + type;
+    t.textContent = msg;
+    document.getElementById("toast-box").appendChild(t);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>t.classList.add("show")));
+    setTimeout(()=>{ t.classList.remove("show"); setTimeout(()=>t.remove(),300); }, dur);
+  }
+
+  // ── LOGIN ─────────────────────────────────────────────────────────────────
+  window.doLogin = function(){
+    const fid = document.getElementById("login-faculty").value;
+    const pw  = document.getElementById("login-pw").value;
+    const err = document.getElementById("login-err");
+    if(!fid){ err.textContent="Please select your name."; err.style.display="block"; return; }
+    if(pw !== PASSWORD){ err.textContent="Incorrect password."; err.style.display="block"; return; }
+    err.style.display="none";
+    currentUser = fid;
+    document.getElementById("hdr-name").textContent = FACULTY[fid];
+    document.getElementById("login-screen").classList.add("hidden");
+    document.getElementById("app").classList.remove("hidden");
+    // Pre-select faculty in form
+    document.getElementById("f-faculty").value = fid;
+    // HOD sees faculty filter
+    if(fid === "HOD"){
+      document.getElementById("fil-faculty").style.display = "block";
+    }
+    loadActivities();
+  };
+
+  window.doLogout = function(){
+    currentUser = null; currentFile = null; currentFileUrl = "";
+    document.getElementById("login-screen").classList.remove("hidden");
+    document.getElementById("app").classList.add("hidden");
+    document.getElementById("login-pw").value = "";
+    document.getElementById("login-faculty").value = "";
+    resetForm();
+  };
+
+  // ── DRAG & DROP ───────────────────────────────────────────────────────────
+  window.dzOver  = e => { e.preventDefault(); document.getElementById("drop-zone").classList.add("over"); };
+  window.dzLeave = ()=> document.getElementById("drop-zone").classList.remove("over");
+  window.dzDrop  = e => { e.preventDefault(); dzLeave(); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); };
+
+  // ── FILE HANDLER ──────────────────────────────────────────────────────────
+  window.handleFile = async function(file){
+    if(!file) return;
+    currentFile = file;
+    currentFileUrl = "";
+    showMsg("ocr-msg","📄 File loaded: "+file.name+" — Running OCR...","msg-info");
+    document.getElementById("file-preview").style.display = "block";
+    document.getElementById("ocr-progress").style.display = "block";
+    document.getElementById("ocr-bar").style.width = "0%";
+    document.getElementById("ocr-label").textContent = "Preparing...";
+
+    // Show preview
+    const prev = document.getElementById("file-preview");
+    prev.innerHTML = "";
+
+    if(file.type === "application/pdf"){
+      // Render first page of PDF to canvas for OCR
+      try {
+        const arrBuf = await file.arrayBuffer();
+        const pdf    = await pdfjsLib.getDocument({data: arrBuf}).promise;
+        const page   = await pdf.getPage(1);
+        const vp     = page.getViewport({scale:1.5});
+        const canvas = document.createElement("canvas");
+        canvas.width  = vp.width;
+        canvas.height = vp.height;
+        await page.render({canvasContext:canvas.getContext("2d"), viewport:vp}).promise;
+        prev.appendChild(canvas);
+        // OCR on canvas
+        await runOCR(canvas);
+      } catch(e){
+        showMsg("ocr-msg","⚠️ PDF preview failed — "+e.message+". Please enter details manually.","msg-err");
+        document.getElementById("ocr-progress").style.display = "none";
+        showFormManual();
+      }
+    } else {
+      // Image
+      const img = document.createElement("img");
+      img.src   = URL.createObjectURL(file);
+      prev.appendChild(img);
+      await img.decode();
+      await runOCR(img);
+    }
+  };
+
+  async function runOCR(source){
+    try {
+      document.getElementById("ocr-label").textContent = "Running OCR (may take 10–30s)...";
+      const result = await Tesseract.recognize(source, "eng", {
+        logger: m => {
+          if(m.status === "recognizing text"){
+            const pct = Math.round(m.progress * 100);
+            document.getElementById("ocr-bar").style.width = pct + "%";
+            document.getElementById("ocr-label").textContent = "OCR: " + pct + "%";
+          }
+        }
+      });
+      document.getElementById("ocr-progress").style.display = "none";
+      const text = result.data.text;
+      document.getElementById("ocr-raw").textContent = text;
+      document.getElementById("ocr-raw-wrap").style.display = "block";
+      showMsg("ocr-msg","✅ OCR complete — form auto-filled. Please verify and correct.","msg-ok");
+      extractAndFill(text);
+    } catch(e){
+      document.getElementById("ocr-progress").style.display = "none";
+      showMsg("ocr-msg","⚠️ OCR failed: "+e.message+". Enter details manually.","msg-err");
+      showFormManual();
+    }
+  }
+
+  // ── CLASSIFICATION ENGINE ─────────────────────────────────────────────────
+  function extractAndFill(text){
+    const lines = text.split("\n").map(l=>l.trim()).filter(l=>l.length>3);
+    const lower = text.toLowerCase();
+
+    // ── TYPE detection ──
+    let type = "Workshop";
+    if(/ph\.?d|doctorate|doctoral/i.test(text))                         type = "PhD";
+    else if(/research paper|published|journal|proceedings/i.test(text)) type = "Research Paper";
+    else if(/achievement|award|prize|winner|best/i.test(text))          type = "Achievement";
+    else if(/fdp|faculty development/i.test(text))                      type = "FDP";
+    else if(/conference|symposium/i.test(text))                         type = "Conference";
+    else if(/seminar/i.test(text))                                      type = "Seminar";
+    else if(/workshop/i.test(text))                                     type = "Workshop";
+
+    // ── MODE detection ──
+    let mode = "Attended";
+    if(/organized|coordinator|convener/i.test(text))    mode = "Organized";
+    else if(/presented|presentation/i.test(text))       mode = "Presented";
+    else if(/published/i.test(text))                    mode = "Published";
+    else if(/completed|awarded|conferred/i.test(text))  mode = "Completed";
+    else if(/received|awarded/i.test(text))             mode = "Received";
+    else if(/participated|attended/i.test(text))        mode = "Attended";
+
+    // ── TITLE detection — longest meaningful line ──
+    let title = "";
+    const skipWords = ["certificate","certify","successfully","participation","organized","department","institute","college","university","knowledge","this","that","hereby","completed","attended"];
+    const candidates = lines.filter(l => {
+      const lw = l.toLowerCase();
+      return l.length > 15 && l.length < 120 &&
+             !skipWords.some(s => lw.startsWith(s)) &&
+             !/^\d+$/.test(l) &&
+             !/^[^a-zA-Z]*$/.test(l);
+    });
+    if(candidates.length){
+      // prefer line with "on", "titled", "entitled", or just longest
+      const titleLine = candidates.find(l => /\bon\b|\btitled\b|\bentitled\b/i.test(l)) ||
+                        candidates.reduce((a,b) => a.length > b.length ? a : b);
+      // Clean: remove leading "on ", "titled ", etc.
+      title = titleLine.replace(/^(on|titled|entitled|topic|subject)\s+[":']?\s*/i,"").replace(/[""]/g,'"').trim();
+    }
+
+    // ── ORGANIZER detection ──
+    let org = "";
+    const orgLine = lines.find(l => /(organized|conducted|hosted|sponsored|presented)\s+by/i.test(l));
+    if(orgLine){
+      org = orgLine.replace(/(organized|conducted|hosted|sponsored|presented)\s+by\s*/i,"").trim();
+    } else {
+      // fallback: line containing "institute", "college", "university"
+      const instLine = lines.find(l => /(institute|college|university|iit|nit|vtu)/i.test(l));
+      if(instLine) org = instLine.trim();
+    }
+
+    // ── DATE detection ──
+    let month = "", year = "";
+    // Try patterns: March 2026, March-2026, 15 March 2026, 15/03/2026
+    const datePatterns = [
+      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})\b/i,
+      /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/,
+      /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s,\-]+(\d{4})\b/i,
+    ];
+    const monthNames = {jan:"January",feb:"February",mar:"March",apr:"April",may:"May",jun:"June",
+                        jul:"July",aug:"August",sep:"September",oct:"October",nov:"November",dec:"December"};
+    for(const pat of datePatterns){
+      const m = text.match(pat);
+      if(m){
+        if(m[3]){ // dd/mm/yyyy
+          const mn = parseInt(m[2])-1;
+          month = ["January","February","March","April","May","June","July","August","September","October","November","December"][mn] || "";
+          year  = m[3];
+        } else {
+          const mStr = m[1].toLowerCase().slice(0,3);
+          month = monthNames[mStr] || m[1].charAt(0).toUpperCase()+m[1].slice(1).toLowerCase();
+          year  = m[2];
+        }
+        break;
+      }
+    }
+
+    // ── ACADEMIC YEAR ──
+    let acYear = "2025-26";
+    if(year){
+      const y = parseInt(year);
+      if(y >= 2023 && y <= 2030){
+        // if month is after June, academic year is y to y+1, else y-1 to y
+        const mIdx = ["January","February","March","April","May","June",
+                      "July","August","September","October","November","December"].indexOf(month);
+        if(mIdx >= 6) acYear = y + "-" + String(y+1).slice(2);
+        else          acYear = (y-1) + "-" + String(y).slice(2);
+      }
+    }
+
+    // Fill form
+    setValue("f-type",    type);
+    setValue("f-mode",    mode);
+    document.getElementById("f-title").value = title;
+    document.getElementById("f-org").value   = org;
+    setValue("f-month",   month);
+    document.getElementById("f-year").value  = year;
+    setValue("f-acyear",  acYear);
+
+    showFormCard();
+  }
+
+  function setValue(id, val){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const opts = Array.from(el.options).map(o=>o.value);
+    if(opts.includes(val)) el.value = val;
+    else {
+      // case-insensitive match
+      const match = opts.find(o=>o.toLowerCase()===val.toLowerCase());
+      if(match) el.value = match;
+    }
+  }
+
+  function showFormCard(){
+    document.getElementById("form-card").style.display = "block";
+    document.getElementById("f-faculty").value = currentUser === "HOD" ? "IS001" : currentUser;
+    document.getElementById("f-filelink").textContent = currentFileUrl ? "🔗 "+currentFileUrl : "No link added";
+  }
+
+  window.saveDriveLink = function(){
+    const link = document.getElementById("drive-link").value.trim();
+    if(!link){ return; }
+    currentFileUrl = link;
+    const st = document.getElementById("drive-link-status");
+    st.textContent = "✅ Link saved — will be stored with activity";
+    st.style.display = "block";
+    document.getElementById("f-filelink").textContent = "🔗 " + link;
+    // Show form if not already showing
+    if(document.getElementById("form-card").style.display === "none"){
+      showFormManual();
+    }
+  };
+
+  window.showFormManual = function(){
+    currentFile = null; currentFileUrl = "";
+    document.getElementById("f-faculty").value = currentUser === "HOD" ? "IS001" : currentUser;
+    document.getElementById("f-filelink").textContent = "No link added";
+    document.getElementById("form-card").style.display = "block";
+  };
+
+  // ── SAVE ACTIVITY ─────────────────────────────────────────────────────────
+  window.saveActivity = async function(){
+    const btn = document.getElementById("save-btn");
+    btn.disabled = true; btn.textContent = "Saving...";
+
+    try {
+      const data = {
+        facultyId:    document.getElementById("f-faculty").value,
+        facultyName:  FACULTY[document.getElementById("f-faculty").value] || "",
+        type:         document.getElementById("f-type").value,
+        mode:         document.getElementById("f-mode").value,
+        title:        document.getElementById("f-title").value.trim() || "(No title)",
+        organizer:    document.getElementById("f-org").value.trim(),
+        month:        document.getElementById("f-month").value,
+        year:         document.getElementById("f-year").value,
+        duration:     document.getElementById("f-duration").value.trim(),
+        academicYear: document.getElementById("f-acyear").value,
+        fileUrl:      currentFileUrl,
+        department:   "ISE",
+        timestamp:    Date.now()
+      };
+
+      await addDoc(collection(db, COL), data);
+      toast("✅ Activity saved!", "toast-ok");
+      resetForm();
+      loadActivities();
+    } catch(e){
+      showMsg("form-msg","❌ Save failed: "+e.message,"msg-err");
+      toast("❌ Save failed","toast-err");
+    } finally {
+      btn.disabled = false; btn.textContent = "💾 Save Activity";
+    }
+  };
+
+  window.resetForm = function(){
+    currentFile = null; currentFileUrl = "";
+    document.getElementById("form-card").style.display = "none";
+    document.getElementById("file-preview").style.display = "none";
+    document.getElementById("ocr-raw-wrap").style.display = "none";
+    document.getElementById("ocr-progress").style.display = "none";
+    document.getElementById("cert-file").value = "";
+    document.getElementById("drive-link").value = "";
+    document.getElementById("drive-link-status").style.display = "none";
+    document.getElementById("f-title").value = "";
+    document.getElementById("f-org").value = "";
+    document.getElementById("f-year").value = "";
+    document.getElementById("f-duration").value = "";
+    document.getElementById("f-filelink").textContent = "No link added";
+    hideMsg("ocr-msg"); hideMsg("form-msg");
+  };
+
+  // ── LOAD ACTIVITIES ───────────────────────────────────────────────────────
+  async function loadActivities(){
+    try {
+      const q    = query(collection(db, COL), orderBy("timestamp","desc"));
+      const snap = await getDocs(q);
+      allActivities = snap.docs.map(d => ({id:d.id, ...d.data()}));
+      applyFilters();
+      updateStats();
+    } catch(e){
+      document.getElementById("act-tbody").innerHTML =
+        `<tr><td colspan="10" style="text-align:center;color:var(--danger)">Error loading: ${e.message}</td></tr>`;
+    }
+  }
+
+  // ── FILTERS ───────────────────────────────────────────────────────────────
+  window.applyFilters = function(){
+    const fFaculty = document.getElementById("fil-faculty").value;
+    const fType    = document.getElementById("fil-type").value;
+    const fAcYear  = document.getElementById("fil-acyear").value;
+    const fMode    = document.getElementById("fil-mode").value;
+    const fSearch  = document.getElementById("fil-search").value.toLowerCase();
+
+    filteredActivities = allActivities.filter(a => {
+      if(currentUser !== "HOD" && a.facultyId !== currentUser) return false;
+      if(fFaculty && a.facultyId !== fFaculty) return false;
+      if(fType    && a.type      !== fType)    return false;
+      if(fAcYear  && a.academicYear !== fAcYear) return false;
+      if(fMode    && a.mode      !== fMode)    return false;
+      if(fSearch  && !a.title?.toLowerCase().includes(fSearch) &&
+                     !a.organizer?.toLowerCase().includes(fSearch)) return false;
+      return true;
+    });
+
+    renderTable(filteredActivities);
+    document.getElementById("result-count").textContent =
+      filteredActivities.length + " of " + (currentUser==="HOD"?allActivities.length:allActivities.filter(a=>a.facultyId===currentUser).length) + " activities";
+  };
+
+  window.clearFilters = function(){
+    ["fil-faculty","fil-type","fil-acyear","fil-mode"].forEach(id=>document.getElementById(id).value="");
+    document.getElementById("fil-search").value = "";
+    applyFilters();
+  };
+
+  // ── RENDER TABLE ──────────────────────────────────────────────────────────
+  function renderTable(acts){
+    const tbody = document.getElementById("act-tbody");
+    if(!acts.length){
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:24px">No activities found</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = acts.map((a,i) => `
+      <tr>
+        <td>${i+1}</td>
+        <td style="white-space:nowrap;font-size:11px">${shortName(a.facultyName)}</td>
+        <td><span class="badge badge-${a.type?.toLowerCase().replace(/\s+/g,'').replace('researc paper','research')}">${a.type||"—"}</span></td>
+        <td style="font-size:11px">${a.mode||"—"}</td>
+        <td style="max-width:180px;font-size:12px">${a.title||"—"}</td>
+        <td style="max-width:140px;font-size:11px">${a.organizer||"—"}</td>
+        <td style="white-space:nowrap;font-size:11px">${a.month||""} ${a.year||""}</td>
+        <td style="font-size:11px">${a.academicYear||"—"}</td>
+        <td>${a.fileUrl?`<a href="${a.fileUrl}" target="_blank" style="color:var(--accent2);font-size:11px">📎</a>`:"—"}</td>
+        <td><div class="tbl-actions">
+          <button class="btn-ghost btn-sm" onclick="openEdit('${a.id}')">✏️</button>
+          <button class="btn-danger btn-sm" onclick="delActivity('${a.id}')">🗑</button>
+        </div></td>
+      </tr>`).join("");
+  }
+
+  function shortName(n){ return n ? n.replace("Prof.","").trim().split(" ").slice(0,2).join(" ") : "—"; }
+
+  // ── STATS ─────────────────────────────────────────────────────────────────
+  function updateStats(){
+    const mine = currentUser==="HOD" ? allActivities : allActivities.filter(a=>a.facultyId===currentUser);
+    document.getElementById("st-total").textContent   = mine.length;
+    document.getElementById("st-workshop").textContent= mine.filter(a=>["Workshop","FDP","Seminar"].includes(a.type)).length;
+    document.getElementById("st-conf").textContent    = mine.filter(a=>a.type==="Conference").length;
+    document.getElementById("st-paper").textContent   = mine.filter(a=>["Research Paper","PhD"].includes(a.type)).length;
+  }
+
+  // ── EDIT ─────────────────────────────────────────────────────────────────
+  window.openEdit = function(id){
+    const a = allActivities.find(x=>x.id===id);
+    if(!a) return;
+    document.getElementById("edit-id").value       = id;
+    document.getElementById("edit-faculty").value  = a.facultyId  || "";
+    setValue2("edit-type",   a.type);
+    setValue2("edit-mode",   a.mode);
+    document.getElementById("edit-title").value    = a.title      || "";
+    document.getElementById("edit-org").value      = a.organizer  || "";
+    setValue2("edit-month",  a.month);
+    document.getElementById("edit-year").value     = a.year       || "";
+    document.getElementById("edit-duration").value = a.duration   || "";
+    setValue2("edit-acyear", a.academicYear);
+    document.getElementById("edit-modal").classList.add("show");
+  };
+
+  function setValue2(id,val){
+    const el=document.getElementById(id);
+    if(!el||!val)return;
+    const opts=Array.from(el.options).map(o=>o.value);
+    const match=opts.find(o=>o.toLowerCase()===val.toLowerCase());
+    if(match)el.value=match;
+  }
+
+  window.closeEdit = () => document.getElementById("edit-modal").classList.remove("show");
+
+  window.saveEdit = async function(){
+    const id = document.getElementById("edit-id").value;
+    const data = {
+      facultyId:    document.getElementById("edit-faculty").value,
+      facultyName:  FACULTY[document.getElementById("edit-faculty").value]||"",
+      type:         document.getElementById("edit-type").value,
+      mode:         document.getElementById("edit-mode").value,
+      title:        document.getElementById("edit-title").value.trim(),
+      organizer:    document.getElementById("edit-org").value.trim(),
+      month:        document.getElementById("edit-month").value,
+      year:         document.getElementById("edit-year").value,
+      duration:     document.getElementById("edit-duration").value.trim(),
+      academicYear: document.getElementById("edit-acyear").value,
+    };
+    try {
+      await updateDoc(doc(db, COL, id), data);
+      toast("✅ Updated!","toast-ok");
+      closeEdit();
+      loadActivities();
+    } catch(e){ toast("❌ Update failed: "+e.message,"toast-err"); }
+  };
+
+  window.delActivity = async function(id){
+    if(!confirm("Delete this activity? This cannot be undone.")) return;
+    try {
+      await deleteDoc(doc(db, COL, id));
+      toast("🗑 Deleted","toast-info");
+      loadActivities();
+    } catch(e){ toast("❌ Delete failed","toast-err"); }
+  };
+
+  // ── REPORT ────────────────────────────────────────────────────────────────
+  window.runReport = function(){
+    const fFaculty = document.getElementById("rpt-faculty").value;
+    const fType    = document.getElementById("rpt-type").value;
+    const fMode    = document.getElementById("rpt-mode").value;
+    const fAcYear  = document.getElementById("rpt-acyear").value;
+    const fYear    = document.getElementById("rpt-year").value;
+    const fMonth   = document.getElementById("rpt-month").value;
+    const fTitle   = document.getElementById("rpt-title").value.toLowerCase();
+
+    reportActivities = allActivities.filter(a => {
+      if(currentUser !== "HOD" && a.facultyId !== currentUser) return false;
+      if(fFaculty && a.facultyId   !== fFaculty)            return false;
+      if(fType    && a.type        !== fType)               return false;
+      if(fMode    && a.mode        !== fMode)               return false;
+      if(fAcYear  && a.academicYear!== fAcYear)             return false;
+      if(fYear    && String(a.year)!== String(fYear))       return false;
+      if(fMonth   && a.month       !== fMonth)              return false;
+      if(fTitle   && !a.title?.toLowerCase().includes(fTitle)) return false;
+      return true;
+    });
+
+    document.getElementById("rpt-count-label").textContent =
+      reportActivities.length + " result(s) found";
+
+    // Text report
+    const text = reportActivities.map((a,i) =>
+      `${i+1}. ${a.facultyName} ${a.mode?.toLowerCase()||"attended"} ${a.type?.toLowerCase()||"an activity"}` +
+      (a.title   ? ` on "${a.title}"`  : "") +
+      (a.organizer ? ` organized by ${a.organizer}` : "") +
+      (a.month||a.year ? ` in ${[a.month,a.year].filter(Boolean).join(" ")}.` : ".")
+    ).join("\n");
+
+    const rt = document.getElementById("report-text");
+    rt.textContent = text || "No results.";
+    rt.style.display = "block";
+
+    // Table
+    document.getElementById("rpt-tbody").innerHTML = reportActivities.map((a,i)=>`
+      <tr>
+        <td>${i+1}</td>
+        <td style="font-size:11px">${shortName(a.facultyName)}</td>
+        <td><span class="badge badge-${a.type?.toLowerCase().replace(/\s+/g,"")}">${a.type||"—"}</span></td>
+        <td style="font-size:11px">${a.mode||"—"}</td>
+        <td style="font-size:12px">${a.title||"—"}</td>
+        <td style="font-size:11px">${a.organizer||"—"}</td>
+        <td style="font-size:11px;white-space:nowrap">${a.month||""} ${a.year||""}</td>
+      </tr>`).join("");
+
+    document.getElementById("rpt-result").classList.remove("hidden");
+  };
+
+  window.clearReport = function(){
+    ["rpt-faculty","rpt-type","rpt-mode","rpt-acyear","rpt-month"].forEach(id=>document.getElementById(id).value="");
+    ["rpt-year","rpt-title"].forEach(id=>document.getElementById(id).value="");
+    document.getElementById("rpt-result").classList.add("hidden");
+    document.getElementById("report-text").style.display = "none";
+    reportActivities = [];
+  };
+
+  window.copyReportText = function(){
+    const text = document.getElementById("report-text").textContent;
+    navigator.clipboard.writeText(text)
+      .then(()=>toast("📋 Copied to clipboard!","toast-ok"))
+      .catch(()=>toast("❌ Copy failed","toast-err"));
+  };
+
+  // ── EXCEL EXPORT ──────────────────────────────────────────────────────────
+  window.exportExcel = function(){ buildExcel(filteredActivities, "FAMS_Activities"); };
+  window.exportReportExcel = function(){ buildExcel(reportActivities, "FAMS_Report"); };
+
+  function buildExcel(acts, filename){
+    if(!acts.length){ toast("No data to export","toast-info"); return; }
+    const ws = {}, merges = [], R = { v:0 };
+    const W = 9, COLS = [
+      {wch:4},{wch:20},{wch:15},{wch:13},{wch:35},{wch:28},{wch:12},{wch:10},{wch:10}
+    ];
+    const S = {
+      hdr1:  {font:{name:"Arial",sz:14,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1F3864"}},alignment:{horizontal:"center",vertical:"center"}},
+      hdr2:  {font:{name:"Arial",sz:11,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"2E4D8A"}},alignment:{horizontal:"center",vertical:"center"}},
+      col:   {font:{name:"Arial",sz:9,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"2B4590"}},alignment:{horizontal:"center",vertical:"center",wrapText:true}},
+      data:  {font:{name:"Arial",sz:9},alignment:{vertical:"center",wrapText:true}},
+      ctr:   {font:{name:"Arial",sz:9},alignment:{horizontal:"center",vertical:"center"}},
+      ts:    {font:{name:"Arial",sz:8,italic:true,color:{rgb:"888888"}},alignment:{horizontal:"right"}},
+    };
+    const C = (r,c,v,s) => ws[XLSX.utils.encode_cell({r,c})]={v,t:typeof v==="number"?"n":"s",s};
+    const MR= r => merges.push({s:{r,c:0},e:{r,c:W-1}});
+
+    let r=0;
+    C(r,0,"KLS Gogte Institute of Technology",S.hdr1); MR(r); r++;
+    C(r,0,"Department of Information Science & Engineering",S.hdr2); MR(r); r++;
+    C(r,0,"Faculty Activity Management System — ISE Dept — 2025-26",S.hdr2); MR(r); r++;
+    r++; // spacer
+    C(r,W-1,"Generated: "+new Date().toLocaleString(),S.ts); r++;
+    ["#","Faculty","Type","Mode","Title","Organizer","Month/Year","Ac.Year","Certificate"].forEach((h,c)=>C(r,c,h,S.col));
+    r++;
+    acts.forEach((a,i)=>{
+      const bg = i%2===0?"FFFFFF":"EEF2FF";
+      const s  = {font:{name:"Arial",sz:9},fill:{fgColor:{rgb:bg},patternType:"solid"},alignment:{vertical:"center",wrapText:true}};
+      const sc = {...s,alignment:{...s.alignment,horizontal:"center"}};
+      C(r,0,i+1,sc);
+      C(r,1,a.facultyName||"",s);
+      C(r,2,a.type||"",sc);
+      C(r,3,a.mode||"",sc);
+      C(r,4,a.title||"",s);
+      C(r,5,a.organizer||"",s);
+      C(r,6,[a.month,a.year].filter(Boolean).join(" "),sc);
+      C(r,7,a.academicYear||"",sc);
+      C(r,8,a.fileUrl?"Yes":"—",sc);
+      r++;
+    });
+    ws["!ref"]  = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:r-1,c:W-1}});
+    ws["!merges"]= merges;
+    ws["!cols"] = COLS;
+    ws["!rows"] = [{hpt:22},{hpt:18},{hpt:18},{hpt:6},{hpt:14},{hpt:22}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"Activities");
+    XLSX.writeFile(wb, filename+"_"+new Date().toISOString().slice(0,10)+".xlsx");
+    toast("📥 Excel downloaded!","toast-ok");
+  }
+
+  // ── GENERATE TEXT REPORT ──────────────────────────────────────────────────
+  window.generateReport = function(){
+    if(!filteredActivities.length){ toast("No activities to report","toast-info"); return; }
+    const text = filteredActivities.map((a,i)=>
+      `${i+1}. ${a.facultyName} ${a.mode?.toLowerCase()||"attended"} ${a.type?.toLowerCase()||"an activity"}` +
+      (a.title    ? ` on "${a.title}"`         : "") +
+      (a.organizer? ` organized by ${a.organizer}` : "") +
+      (a.month||a.year ? ` in ${[a.month,a.year].filter(Boolean).join(" ")}.` : ".")
+    ).join("\n");
+    navigator.clipboard.writeText(text)
+      .then(()=>toast("📋 Report copied!","toast-ok"))
+      .catch(()=>toast("❌ Copy failed","toast-err"));
+  };
+
+  // ── TAB SWITCHER ──────────────────────────────────────────────────────────
+  window.switchTab = function(tab, btn){
+    document.querySelectorAll(".section-tab").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("tab-activities").classList.toggle("hidden", tab!=="activities");
+    document.getElementById("tab-reports").classList.toggle("hidden", tab!=="reports");
+  };
+
+  // ── HELPERS ───────────────────────────────────────────────────────────────
+  function showMsg(id,msg,cls){
+    const el=document.getElementById(id);
+    el.textContent=msg; el.className="msg "+cls+" show";
+  }
+  function hideMsg(id){ const el=document.getElementById(id); el.className="msg"; }
+
+}); // end fbReady
+</script>
+</body>
+</html>
