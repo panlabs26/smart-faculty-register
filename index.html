@@ -1055,6 +1055,8 @@ window.addEventListener("fbReady", () => {
     document.getElementById("f-org").value = "";
     document.getElementById("f-year").value = "";
     document.getElementById("f-duration").value = "";
+    document.getElementById("f-participant").value = "";
+    document.getElementById("participant-name-wrap").style.display = "none";
     document.getElementById("f-filelink").textContent = "No link added";
     hideMsg("ocr-msg"); hideMsg("form-msg");
   };
@@ -1116,7 +1118,7 @@ window.addEventListener("fbReady", () => {
         <td style="white-space:nowrap;font-size:11px">${shortName(a.facultyName)}</td>
         <td><span class="badge badge-${a.type?.toLowerCase().replace(/\s+/g,'').replace('researc paper','research')}">${a.type||"—"}</span></td>
         <td style="font-size:11px">${a.mode||"—"}</td>
-        <td style="max-width:180px;font-size:12px">${a.title||"—"}</td>
+        <td style="max-width:180px;font-size:12px">${a.title||"—"}${a.participantName ? '<br><small style="color:#6868a0">👤 '+a.participantName+'</small>' : ''}</td>
         <td style="max-width:140px;font-size:11px">${a.organizer||"—"}</td>
         <td style="white-space:nowrap;font-size:11px">${a.month||""} ${a.year||""}</td>
         <td style="font-size:11px">${a.academicYear||"—"}</td>
