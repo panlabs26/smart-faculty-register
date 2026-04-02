@@ -202,6 +202,26 @@ tr:hover td{background:rgba(91,110,245,0.05);}
 
 .hidden{display:none!important;}
 .full-btn{width:100%;}
+
+/* ── CAMERA MODAL ─────────────────────────────────────────────────────────── */
+#camera-modal .modal-box{width:min(640px,95vw);padding:20px;}
+#camera-video{width:100%;border-radius:8px;background:#000;max-height:320px;}
+#camera-canvas{display:none;}
+#snap-preview{display:none;width:100%;border-radius:8px;margin-top:10px;border:1px solid var(--border);}
+.camera-btn-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+
+/* ── BULK QUEUE ───────────────────────────────────────────────────────────── */
+#bulk-queue{display:none;margin-bottom:12px;}
+.bulk-item{display:flex;align-items:center;gap:8px;padding:7px 10px;
+  border-radius:8px;border:1px solid var(--border);margin-bottom:6px;font-size:12px;}
+.bulk-item .bi-name{flex:1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bulk-item .bi-status{font-size:10px;padding:2px 7px;border-radius:999px;flex-shrink:0;}
+.bi-pending {background:rgba(104,104,160,0.2);color:var(--muted);}
+.bi-running {background:rgba(91,110,245,0.2);color:var(--accent);}
+.bi-done    {background:rgba(34,211,165,0.2);color:var(--accent2);}
+.bi-skip    {background:rgba(245,91,91,0.2);color:var(--danger);}
+.bulk-progress{font-size:11px;color:var(--muted);margin-bottom:8px;}
+
 </style>
 </head>
 <body>
@@ -261,27 +281,49 @@ tr:hover td{background:rgba(91,110,245,0.05);}
     <div class="left-panel">
       <h2>➕ Add New Activity</h2>
 
-      <!-- Step 1: Upload / OCR -->
+      <!-- Step 1: Upload / OCR / Camera / Bulk -->
       <div class="card">
-        <h3>Step 1 · Certificate (OCR or Drive Link)</h3>
+        <h3>Step 1 · Certificate</h3>
 
         <!-- Drive link input -->
-        <label>Google Drive Link <span style="color:var(--muted);font-weight:400;text-transform:none">(paste shareable link)</span></label>
+        <label>Google Drive Link <span style="color:var(--muted);font-weight:400;text-transform:none">(optional — paste shareable link)</span></label>
         <div style="display:flex;gap:8px;margin-bottom:10px">
           <input type="text" id="drive-link" placeholder="https://drive.google.com/..." style="margin-bottom:0;flex:1">
-          <button class="btn-accent btn-sm" onclick="saveDriveLink()" style="flex-shrink:0">Save Link</button>
+          <button class="btn-accent btn-sm" onclick="saveDriveLink()" style="flex-shrink:0">💾</button>
         </div>
-        <div id="drive-link-status" style="font-size:11px;color:var(--accent2);margin-bottom:10px;display:none"></div>
+        <div id="drive-link-status" style="font-size:11px;color:var(--accent2);margin-bottom:8px;display:none"></div>
 
-        <div style="text-align:center;font-size:11px;color:var(--muted);margin-bottom:10px">— or scan certificate with OCR —</div>
+        <div style="text-align:center;font-size:11px;color:var(--muted);margin-bottom:8px">— scan certificate for OCR auto-fill —</div>
 
-        <!-- Drop zone for OCR -->
-        <div id="drop-zone" onclick="document.getElementById('cert-file').click()"
+        <!-- Action buttons row -->
+        <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="btn-accent btn-sm" style="flex:1" onclick="document.getElementById('cert-file').click()">📁 Browse File</button>
+          <button class="btn-blue btn-sm" style="flex:1" onclick="document.getElementById('bulk-file').click()">📚 Bulk Upload</button>
+          <button class="btn-green btn-sm" style="flex:1" onclick="openCamera()">📷 Camera</button>
+        </div>
+
+        <!-- Single file input (hidden) -->
+        <input type="file" id="cert-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="handleFile(this.files[0])">
+        <!-- Bulk file input (hidden) -->
+        <input type="file" id="bulk-file" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none" onchange="handleBulkFiles(this.files)">
+
+        <!-- Drop zone -->
+        <div id="drop-zone"
              ondragover="dzOver(event)" ondragleave="dzLeave()" ondrop="dzDrop(event)">
-          <div class="dz-icon">📷</div>
-          <p>Drop image/PDF for OCR auto-fill<br><span style="color:var(--accent);font-size:12px">click to browse · JPG, PNG, PDF</span></p>
-          <input type="file" id="cert-file" accept=".pdf,.jpg,.jpeg,.png" onchange="handleFile(this.files[0])">
+          <div class="dz-icon">📄</div>
+          <p>Drop image/PDF here<br><span style="color:var(--accent);font-size:11px">single or multiple files · JPG PNG PDF</span></p>
         </div>
+
+        <!-- Bulk queue -->
+        <div id="bulk-queue">
+          <div class="bulk-progress" id="bulk-progress-label"></div>
+          <div id="bulk-list"></div>
+          <div class="btn-row" style="margin-top:6px">
+            <button class="btn-ghost btn-sm" onclick="skipBulkItem()">⏭ Skip This</button>
+            <button class="btn-danger btn-sm" onclick="cancelBulk()">✕ Cancel Bulk</button>
+          </div>
+        </div>
+
         <div id="file-preview"></div>
         <div id="ocr-progress">
           <div class="progress-label" id="ocr-label">Running OCR...</div>
@@ -563,6 +605,26 @@ tr:hover td{background:rgba(91,110,245,0.05);}
 
     </div><!-- right panel -->
   </div><!-- main layout -->
+
+<!-- Camera Modal -->
+<div class="modal-overlay" id="camera-modal">
+  <div class="modal-box" id="camera-modal-box">
+    <h2 style="margin-bottom:12px">📷 Take Photo of Certificate</h2>
+    <video id="camera-video" autoplay playsinline></video>
+    <canvas id="camera-canvas"></canvas>
+    <img id="snap-preview" alt="Captured">
+    <div class="camera-btn-row">
+      <button class="btn-green" id="snap-btn" onclick="snapPhoto()">📸 Snap</button>
+      <button class="btn-accent" id="use-snap-btn" onclick="useSnap()" style="display:none">✅ Use This → OCR</button>
+      <button class="btn-warn" id="retake-btn" onclick="retakePhoto()" style="display:none">🔄 Retake</button>
+      <button class="btn-ghost" onclick="closeCamera()">✕ Close</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">
+      Tip: Hold certificate flat, ensure good lighting, avoid shadows
+    </div>
+  </div>
+</div>
+
 </div><!-- app -->
 
 <!-- Edit Modal -->
@@ -741,7 +803,13 @@ window.addEventListener("fbReady", () => {
   // ── DRAG & DROP ───────────────────────────────────────────────────────────
   window.dzOver  = e => { e.preventDefault(); document.getElementById("drop-zone").classList.add("over"); };
   window.dzLeave = ()=> document.getElementById("drop-zone").classList.remove("over");
-  window.dzDrop  = e => { e.preventDefault(); dzLeave(); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); };
+  window.dzDrop  = e => {
+    e.preventDefault(); dzLeave();
+    const files = e.dataTransfer.files;
+    if(!files || files.length === 0) return;
+    if(files.length > 1) handleBulkFiles(files);
+    else handleFile(files[0]);
+  };
 
   // ── FILE HANDLER ──────────────────────────────────────────────────────────
   window.handleFile = async function(file){
@@ -1032,8 +1100,13 @@ window.addEventListener("fbReady", () => {
 
       await addDoc(collection(db, COL), data);
       toast("✅ Activity saved!", "toast-ok");
-      resetForm();
-      loadActivities();
+      if(isBulkMode){
+        loadActivities();
+        bulkNext();
+      } else {
+        resetForm();
+        loadActivities();
+      }
     } catch(e){
       showMsg("form-msg","❌ Save failed: "+e.message,"msg-err");
       toast("❌ Save failed","toast-err");
@@ -1043,12 +1116,18 @@ window.addEventListener("fbReady", () => {
   };
 
   window.resetForm = function(){
+    isBulkMode = false; bulkFiles = []; bulkIdx = 0;
+    const bq = document.getElementById("bulk-queue");
+    if(bq) bq.style.display = "none";
+    const dz = document.getElementById("drop-zone");
+    if(dz) dz.style.display = "block";
     currentFile = null; currentFileUrl = "";
     document.getElementById("form-card").style.display = "none";
     document.getElementById("file-preview").style.display = "none";
     document.getElementById("ocr-raw-wrap").style.display = "none";
     document.getElementById("ocr-progress").style.display = "none";
     document.getElementById("cert-file").value = "";
+    document.getElementById("bulk-file").value = "";
     document.getElementById("drive-link").value = "";
     document.getElementById("drive-link-status").style.display = "none";
     document.getElementById("f-title").value = "";
@@ -1348,6 +1427,170 @@ window.addEventListener("fbReady", () => {
     el.textContent=msg; el.className="msg "+cls+" show";
   }
   function hideMsg(id){ const el=document.getElementById(id); el.className="msg"; }
+
+
+  // ── BULK UPLOAD ────────────────────────────────────────────────────────────
+  let bulkFiles = [], bulkIdx = 0, isBulkMode = false;
+
+  window.handleBulkFiles = function(files){
+    if(!files || files.length === 0) return;
+    if(files.length === 1){ handleFile(files[0]); return; }
+
+    bulkFiles = Array.from(files);
+    bulkIdx   = 0;
+    isBulkMode = true;
+
+    // Render queue list
+    const list = document.getElementById("bulk-list");
+    list.innerHTML = bulkFiles.map((f,i) =>
+      `<div class="bulk-item" id="bi-${i}">
+        <span class="bi-name">📄 ${f.name}</span>
+        <span class="bi-status bi-pending" id="bi-st-${i}">Pending</span>
+       </div>`
+    ).join("");
+
+    document.getElementById("bulk-queue").style.display = "block";
+    document.getElementById("drop-zone").style.display  = "none";
+    processBulkItem();
+  };
+
+  async function processBulkItem(){
+    if(bulkIdx >= bulkFiles.length){
+      // All done
+      document.getElementById("bulk-progress-label").textContent = "✅ All done! " + bulkFiles.length + " files processed.";
+      isBulkMode = false;
+      return;
+    }
+
+    const file = bulkFiles[bulkIdx];
+    document.getElementById("bulk-progress-label").textContent =
+      "Processing " + (bulkIdx+1) + " of " + bulkFiles.length + ": " + file.name;
+
+    // Mark current as running
+    const stEl = document.getElementById("bi-st-"+bulkIdx);
+    if(stEl){ stEl.textContent="Running OCR"; stEl.className="bi-status bi-running"; }
+
+    await handleFile(file);
+    // handleFile → OCR → extractAndFill → showFormCard
+    // User verifies → clicks Save → saveActivity calls bulkNext()
+  }
+
+  // Called after save in bulk mode
+  function bulkNext(){
+    // Mark current as done
+    const stEl = document.getElementById("bi-st-"+bulkIdx);
+    if(stEl){ stEl.textContent="✅ Saved"; stEl.className="bi-status bi-done"; }
+    bulkIdx++;
+    resetFormOnly(); // reset form without clearing bulk queue
+    processBulkItem();
+  }
+
+  window.skipBulkItem = function(){
+    const stEl = document.getElementById("bi-st-"+bulkIdx);
+    if(stEl){ stEl.textContent="Skipped"; stEl.className="bi-status bi-skip"; }
+    bulkIdx++;
+    resetFormOnly();
+    processBulkItem();
+  };
+
+  window.cancelBulk = function(){
+    isBulkMode = false; bulkFiles = []; bulkIdx = 0;
+    document.getElementById("bulk-queue").style.display = "none";
+    document.getElementById("drop-zone").style.display  = "block";
+    resetFormOnly();
+    toast("Bulk upload cancelled","toast-info");
+  };
+
+  // Lightweight reset — doesn't clear bulk queue
+  function resetFormOnly(){
+    currentFile = null; currentFileUrl = "";
+    document.getElementById("form-card").style.display    = "none";
+    document.getElementById("file-preview").style.display = "none";
+    document.getElementById("ocr-raw-wrap").style.display = "none";
+    document.getElementById("ocr-progress").style.display = "none";
+    document.getElementById("cert-file").value = "";
+    document.getElementById("drive-link").value = "";
+    document.getElementById("drive-link-status").style.display = "none";
+    document.getElementById("f-title").value = "";
+    document.getElementById("f-org").value = "";
+    document.getElementById("f-year").value = "";
+    document.getElementById("f-duration").value = "";
+    document.getElementById("f-participant").value = "";
+    document.getElementById("participant-name-wrap").style.display = "none";
+    document.getElementById("f-filelink").textContent = "No link added";
+    hideMsg("ocr-msg"); hideMsg("form-msg");
+  }
+
+  // ── CAMERA ─────────────────────────────────────────────────────────────────
+  let cameraStream = null;
+  let snappedBlob  = null;
+
+  window.openCamera = async function(){
+    snappedBlob = null;
+    document.getElementById("snap-preview").style.display  = "none";
+    document.getElementById("snap-btn").style.display      = "inline-block";
+    document.getElementById("use-snap-btn").style.display  = "none";
+    document.getElementById("retake-btn").style.display    = "none";
+    document.getElementById("camera-modal").classList.add("show");
+
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:"environment", width:{ideal:1280}, height:{ideal:720} }
+      });
+      const video = document.getElementById("camera-video");
+      video.srcObject = cameraStream;
+      video.style.display = "block";
+    } catch(e){
+      toast("❌ Camera access denied: "+e.message,"toast-err");
+      closeCamera();
+    }
+  };
+
+  window.snapPhoto = function(){
+    const video  = document.getElementById("camera-video");
+    const canvas = document.getElementById("camera-canvas");
+    canvas.width  = video.videoWidth  || 1280;
+    canvas.height = video.videoHeight || 720;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+
+    // Show preview
+    const preview = document.getElementById("snap-preview");
+    preview.src   = canvas.toDataURL("image/jpeg", 0.92);
+    preview.style.display = "block";
+    video.style.display   = "none";
+
+    document.getElementById("snap-btn").style.display     = "none";
+    document.getElementById("use-snap-btn").style.display = "inline-block";
+    document.getElementById("retake-btn").style.display   = "inline-block";
+
+    // Convert canvas to blob
+    canvas.toBlob(blob => { snappedBlob = blob; }, "image/jpeg", 0.92);
+  };
+
+  window.retakePhoto = function(){
+    snappedBlob = null;
+    const video   = document.getElementById("camera-video");
+    const preview = document.getElementById("snap-preview");
+    video.style.display   = "block";
+    preview.style.display = "none";
+    document.getElementById("snap-btn").style.display     = "inline-block";
+    document.getElementById("use-snap-btn").style.display = "none";
+    document.getElementById("retake-btn").style.display   = "none";
+  };
+
+  window.useSnap = function(){
+    if(!snappedBlob){ toast("No photo captured","toast-err"); return; }
+    closeCamera();
+    // Convert blob to File and process
+    const file = new File([snappedBlob], "camera_"+Date.now()+".jpg", {type:"image/jpeg"});
+    handleFile(file);
+  };
+
+  window.closeCamera = function(){
+    if(cameraStream){ cameraStream.getTracks().forEach(t=>t.stop()); cameraStream=null; }
+    document.getElementById("camera-video").srcObject = null;
+    document.getElementById("camera-modal").classList.remove("show");
+  };
 
 }); // end fbReady
 </script>
