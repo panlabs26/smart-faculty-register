@@ -318,9 +318,15 @@ tr:hover td{background:rgba(91,110,245,0.05);}
         <div id="bulk-queue">
           <div class="bulk-progress" id="bulk-progress-label"></div>
           <div id="bulk-list"></div>
-          <div class="btn-row" style="margin-top:6px">
-            <button class="btn-ghost btn-sm" onclick="skipBulkItem()">⏭ Skip This</button>
-            <button class="btn-danger btn-sm" onclick="cancelBulk()">✕ Cancel Bulk</button>
+          <div style="display:flex;align-items:center;gap:8px;margin:8px 0;font-size:12px">
+            <label style="text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="bulk-auto" checked style="width:auto;margin:0">
+              Auto-save all (no review)
+            </label>
+          </div>
+          <div class="btn-row" style="margin-top:4px">
+            <button class="btn-ghost btn-sm" id="bulk-skip-btn" onclick="skipBulkItem()" style="display:none">⏭ Skip</button>
+            <button class="btn-danger btn-sm" onclick="cancelBulk()">✕ Cancel</button>
           </div>
         </div>
 
@@ -687,7 +693,7 @@ tr:hover td{background:rgba(91,110,245,0.05);}
 <!-- Firebase SDK (ES Module) -->
 <script type="module">
 import { initializeApp }     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy }
+import { getFirestore, collection, addDoc, getDocs, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy }
                               from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -729,14 +735,14 @@ let filteredActivities = [];
 let reportActivities = [];
 
 // expose to global
-window._fb = { db, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy, collection, COL };
+window._fb = { db, addDoc, getDocs, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, collection, COL };
 window.dispatchEvent(new Event("fbReady"));
 </script>
 
 <script>
 // ── WAIT FOR FIREBASE ──────────────────────────────────────────────────────
 window.addEventListener("fbReady", () => {
-  const { db, addDoc, getDocs, updateDoc, deleteDoc, doc,
+  const { db, addDoc, getDocs, onSnapshot, updateDoc, deleteDoc, doc,
           query, orderBy, collection, COL } = window._fb;
 
   pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -972,35 +978,23 @@ window.addEventListener("fbReady", () => {
       }
     }
 
-    // ── FACULTY NAME detection from OCR text ──
-    const FACULTY_NAMES = {
-      IS001:["Neelakanth Karekar","Neelakanth","Karekar","nkarekar"],
-      IS002:["Pandurang Upparamani","Pandurang","Upparamani","upparamani"],
-      IS003:["Sudhir Madi","Sudhir","sudhirmadi"],
-      IS004:["Kadayya Mathad","Kadayya","Mathad","mathadks"],
-      IS005:["Anusha Chogund","Anusha","Chogund","apcogund"],
-      IS006:["Rakesh Kadkol","Rakesh","Kadkol","rjkadkol"],
-      IS007:["Vaibhav Chavan","Vaibhav","Chavan"],
-      IS008:["Asharani","Asha Rani"],
-    };
-    let detectedFaculty = "";
-    for(const [id, names] of Object.entries(FACULTY_NAMES)){
-      if(names.some(n => text.toLowerCase().includes(n.toLowerCase()))){
-        detectedFaculty = id;
-        break;
-      }
+    // Use shared classifyText for consistency
+    const ex = classifyText(text);
+    setValue("f-type",  ex.type);
+    setValue("f-mode",  ex.mode);
+    document.getElementById("f-title").value = ex.title;
+    document.getElementById("f-org").value   = ex.org;
+    setValue("f-month", ex.month);
+    document.getElementById("f-year").value  = ex.year;
+    setValue("f-acyear",ex.acYear);
+    if(ex.unknownName){
+      document.getElementById("participant-name-wrap").style.display = "block";
+      document.getElementById("f-participant").value = ex.unknownName;
+    } else {
+      document.getElementById("participant-name-wrap").style.display = "none";
+      document.getElementById("f-participant").value = "";
     }
-
-    // Fill form
-    setValue("f-type",    type);
-    setValue("f-mode",    mode);
-    document.getElementById("f-title").value = title;
-    document.getElementById("f-org").value   = org;
-    setValue("f-month",   month);
-    document.getElementById("f-year").value  = year;
-    setValue("f-acyear",  acYear);
-
-    showFormCard(detectedFaculty);
+    showFormCard(ex.detectedFaculty, ex.unknownName);
   }
 
   function setValue(id, val){
@@ -1015,22 +1009,21 @@ window.addEventListener("fbReady", () => {
     }
   }
 
-  function showFormCard(detectedFaculty){
+  function showFormCard(detectedFaculty, unknownName){
     document.getElementById("form-card").style.display = "block";
-    // Priority: 1) OCR-detected name, 2) logged-in faculty, 3) IS001 for HOD
     const fSel = document.getElementById("f-faculty");
     if(detectedFaculty){
       fSel.value = detectedFaculty;
-      if(detectedFaculty !== currentUser && currentUser !== "HOD"){
-        toast("👤 Detected: "+FACULTY[detectedFaculty]+" — please verify", "toast-info", 4000);
-      }
+      toast("👤 "+(currentUser==="HOD"?"Auto-assigned: ":"Detected: ")+FACULTY[detectedFaculty]+" — verify", "toast-info", 3500);
+    } else if(unknownName){
+      fSel.value = currentUser === "HOD" ? "IS001" : currentUser;
+      toast("👤 Unknown: '"+unknownName+"' in Participant Name — assign correct faculty", "toast-info", 5000);
     } else {
       fSel.value = currentUser === "HOD" ? "IS001" : currentUser;
     }
-    // HOD: always keep dropdown editable (already is — just ensure no disabled attr)
     fSel.disabled = false;
     const hint = document.getElementById("faculty-hint");
-    if(hint) hint.textContent = currentUser==="HOD" ? "(HOD mode — assign to any faculty)" : "";
+    if(hint) hint.textContent = currentUser==="HOD" ? "(HOD — assign to any faculty)" : "";
     document.getElementById("f-filelink").textContent = currentFileUrl ? "🔗 "+currentFileUrl : "No link added";
   }
 
@@ -1101,11 +1094,9 @@ window.addEventListener("fbReady", () => {
       await addDoc(collection(db, COL), data);
       toast("✅ Activity saved!", "toast-ok");
       if(isBulkMode){
-        loadActivities();
         bulkNext();
       } else {
         resetForm();
-        loadActivities();
       }
     } catch(e){
       showMsg("form-msg","❌ Save failed: "+e.message,"msg-err");
@@ -1140,18 +1131,19 @@ window.addEventListener("fbReady", () => {
     hideMsg("ocr-msg"); hideMsg("form-msg");
   };
 
-  // ── LOAD ACTIVITIES ───────────────────────────────────────────────────────
-  async function loadActivities(){
-    try {
-      const q    = query(collection(db, COL), orderBy("timestamp","desc"));
-      const snap = await getDocs(q);
+  // ── LOAD ACTIVITIES — real-time listener ─────────────────────────────────
+  let _unsubAct = null;
+  function loadActivities(){
+    if(_unsubAct) _unsubAct();
+    const q = query(collection(db, COL), orderBy("timestamp","desc"));
+    _unsubAct = onSnapshot(q, snap => {
       allActivities = snap.docs.map(d => ({id:d.id, ...d.data()}));
       applyFilters();
       updateStats();
-    } catch(e){
+    }, e => {
       document.getElementById("act-tbody").innerHTML =
-        `<tr><td colspan="10" style="text-align:center;color:var(--danger)">Error loading: ${e.message}</td></tr>`;
-    }
+        `<tr><td colspan="10" style="text-align:center;color:var(--danger)">Error: ${e.message}</td></tr>`;
+    });
   }
 
   // ── FILTERS ───────────────────────────────────────────────────────────────
@@ -1197,7 +1189,10 @@ window.addEventListener("fbReady", () => {
         <td style="white-space:nowrap;font-size:11px">${shortName(a.facultyName)}</td>
         <td><span class="badge badge-${a.type?.toLowerCase().replace(/\s+/g,'').replace('researc paper','research')}">${a.type||"—"}</span></td>
         <td style="font-size:11px">${a.mode||"—"}</td>
-        <td style="max-width:180px;font-size:12px">${a.title||"—"}${a.participantName ? '<br><small style="color:#6868a0">👤 '+a.participantName+'</small>' : ''}</td>
+        <td style="max-width:180px;font-size:12px">
+          ${a.bulkImported?'<span style="font-size:9px;background:rgba(245,201,91,0.15);color:#f5c95b;padding:1px 5px;border-radius:4px;margin-right:3px">⚡bulk</span>':''}${a.title||"—"}
+          ${a.participantName?'<br><span style="font-size:10px;color:#f5c95b">👤 '+a.participantName+'</span>':''}
+        </td>
         <td style="max-width:140px;font-size:11px">${a.organizer||"—"}</td>
         <td style="white-space:nowrap;font-size:11px">${a.month||""} ${a.year||""}</td>
         <td style="font-size:11px">${a.academicYear||"—"}</td>
@@ -1265,7 +1260,6 @@ window.addEventListener("fbReady", () => {
       await updateDoc(doc(db, COL, id), data);
       toast("✅ Updated!","toast-ok");
       closeEdit();
-      loadActivities();
     } catch(e){ toast("❌ Update failed: "+e.message,"toast-err"); }
   };
 
@@ -1274,7 +1268,6 @@ window.addEventListener("fbReady", () => {
     try {
       await deleteDoc(doc(db, COL, id));
       toast("🗑 Deleted","toast-info");
-      loadActivities();
     } catch(e){ toast("❌ Delete failed","toast-err"); }
   };
 
@@ -1456,23 +1449,24 @@ window.addEventListener("fbReady", () => {
 
   async function processBulkItem(){
     if(bulkIdx >= bulkFiles.length){
-      // All done
-      document.getElementById("bulk-progress-label").textContent = "✅ All done! " + bulkFiles.length + " files processed.";
+      document.getElementById("bulk-progress-label").textContent = "✅ All done! "+bulkFiles.length+" files processed.";
       isBulkMode = false;
+      resetFormOnly();
       return;
     }
-
-    const file = bulkFiles[bulkIdx];
+    const file   = bulkFiles[bulkIdx];
+    const isAuto = document.getElementById("bulk-auto")?.checked !== false;
     document.getElementById("bulk-progress-label").textContent =
-      "Processing " + (bulkIdx+1) + " of " + bulkFiles.length + ": " + file.name;
-
-    // Mark current as running
+      (isAuto?"⚡ Auto-saving ":"📋 Review ")+(bulkIdx+1)+" / "+bulkFiles.length+" — "+file.name;
     const stEl = document.getElementById("bi-st-"+bulkIdx);
-    if(stEl){ stEl.textContent="Running OCR"; stEl.className="bi-status bi-running"; }
-
-    await handleFile(file);
-    // handleFile → OCR → extractAndFill → showFormCard
-    // User verifies → clicks Save → saveActivity calls bulkNext()
+    if(stEl){stEl.textContent="OCR...";stEl.className="bi-status bi-running";}
+    const skipBtn = document.getElementById("bulk-skip-btn");
+    if(skipBtn) skipBtn.style.display = isAuto ? "none" : "inline-block";
+    if(isAuto){
+      await bulkAutoProcess(file);
+    } else {
+      await handleFile(file);
+    }
   }
 
   // Called after save in bulk mode
