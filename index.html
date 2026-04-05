@@ -224,7 +224,6 @@ tr:hover td{background:rgba(91,110,245,0.05);}
 
 </style>
 </head>
-  <script src="script.js"></script>
 <body>
 
 <div id="toast-box"></div>
@@ -289,7 +288,7 @@ tr:hover td{background:rgba(91,110,245,0.05);}
         <!-- Drive link input -->
         <label>Google Drive Link <span style="color:var(--muted);font-weight:400;text-transform:none">(optional — paste shareable link)</span></label>
         <div style="display:flex;gap:8px;margin-bottom:10px">
-          <input type="text" id="drive-link" placeholder="https://drive.google.com/..." style="margin-bottom:0;flex:1">
+          <input type="text" id="drive-link" placeholder="https://drive.google.com/..." style="margin-bottom:0;flex:1" onkeydown="if(event.key==='Enter')saveDriveLink()">
           <button class="btn-accent btn-sm" onclick="saveDriveLink()" style="flex-shrink:0">💾</button>
         </div>
         <div id="drive-link-status" style="font-size:11px;color:var(--accent2);margin-bottom:8px;display:none"></div>
@@ -333,8 +332,16 @@ tr:hover td{background:rgba(91,110,245,0.05);}
 
         <div id="file-preview"></div>
         <div id="ocr-progress">
-          <div class="progress-label" id="ocr-label">Running OCR...</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <div class="progress-label" id="ocr-label">Running OCR...</div>
+            <button class="btn-danger" id="ocr-stop-btn" onclick="stopOCR()" style="padding:3px 10px;font-size:11px;display:none">⏹ Stop</button>
+          </div>
           <div class="progress-bar"><div class="progress-fill" id="ocr-bar"></div></div>
+          <div id="ocr-timeout-warn" style="font-size:10px;color:var(--warn);margin-top:4px;display:none">⚠️ Taking long — click Stop to enter manually</div>
+        </div>
+        <div id="ocr-retry-wrap" style="display:none;gap:8px;margin-bottom:8px">
+          <button class="btn-ghost btn-sm" onclick="retryOCR()">🔄 Retry OCR</button>
+          <button class="btn-accent btn-sm" onclick="showFormManual()">📝 Enter Manually</button>
         </div>
         <div id="ocr-msg" class="msg"></div>
         <div id="ocr-raw-wrap">
@@ -489,6 +496,7 @@ tr:hover td{background:rgba(91,110,245,0.05);}
           <div style="font-size:12px;color:var(--muted)" id="result-count"></div>
           <div class="btn-row" style="margin:0">
             <button class="btn-green btn-sm" onclick="exportExcel()">📥 Export Excel</button>
+            <button class="btn-blue btn-sm" id="dept-report-btn" onclick="exportDeptReport()" style="display:none" title="Download all faculty activities in one Excel file">🏫 Full Dept Report (All Faculty)</button>
             <button class="btn-ghost btn-sm" onclick="generateReport()">📄 Copy Report</button>
           </div>
         </div>
@@ -762,7 +770,8 @@ window.addEventListener("fbReady", () => {
   };
 
   const PASSWORD = "ise123";
-  let currentUser = null, currentFile = null, currentFileUrl = "";
+  let currentUser = null, currentFile = null, currentFileUrl = "", persistedDriveLink = "";
+  let ocrTimeout = null, _lastOCRSource = null;
   let allActivities = [], filteredActivities = [], reportActivities = [];
 
   // ── TOAST ────────────────────────────────────────────────────────────────
@@ -794,6 +803,7 @@ window.addEventListener("fbReady", () => {
     // HOD sees faculty filter
     if(fid === "HOD"){
       document.getElementById("fil-faculty").style.display = "block";
+      const drb=document.getElementById("dept-report-btn");if(drb)drb.style.display="inline-block";
     }
     loadActivities();
   };
@@ -822,7 +832,7 @@ window.addEventListener("fbReady", () => {
   window.handleFile = async function(file){
     if(!file) return;
     currentFile = file;
-    currentFileUrl = "";
+    currentFileUrl = persistedDriveLink || "";
     showMsg("ocr-msg","📄 File loaded: "+file.name+" — Running OCR...","msg-info");
     document.getElementById("file-preview").style.display = "block";
     document.getElementById("ocr-progress").style.display = "block";
@@ -863,124 +873,67 @@ window.addEventListener("fbReady", () => {
   };
 
   async function runOCR(source){
+    _lastOCRSource = source;
+    document.getElementById("ocr-progress").style.display = "block";
+    document.getElementById("ocr-bar").style.width = "0%";
+    document.getElementById("ocr-label").textContent = "Running OCR...";
+    document.getElementById("ocr-stop-btn").style.display = "inline-block";
+    document.getElementById("ocr-retry-wrap").style.display = "none";
+    document.getElementById("ocr-timeout-warn").style.display = "none";
+    ocrTimeout = setTimeout(()=>{ document.getElementById("ocr-timeout-warn").style.display="block"; }, 20000);
+    const hardStop = setTimeout(()=>stopOCR(), 45000);
     try {
-      document.getElementById("ocr-label").textContent = "Running OCR (may take 10–30s)...";
       const result = await Tesseract.recognize(source, "eng", {
         logger: m => {
           if(m.status === "recognizing text"){
-            const pct = Math.round(m.progress * 100);
-            document.getElementById("ocr-bar").style.width = pct + "%";
-            document.getElementById("ocr-label").textContent = "OCR: " + pct + "%";
+            const pct = Math.round(m.progress*100);
+            document.getElementById("ocr-bar").style.width = pct+"%";
+            document.getElementById("ocr-label").textContent = "OCR: "+pct+"%";
           }
         }
       });
+      clearTimeout(ocrTimeout); clearTimeout(hardStop);
       document.getElementById("ocr-progress").style.display = "none";
-      const text = result.data.text;
+      document.getElementById("ocr-stop-btn").style.display = "none";
+      const text = result.data.text||"";
+      const wc = text.split(/\s+/).filter(w=>w.length>2).length;
       document.getElementById("ocr-raw").textContent = text;
       document.getElementById("ocr-raw-wrap").style.display = "block";
-      showMsg("ocr-msg","✅ OCR complete — form auto-filled. Please verify and correct.","msg-ok");
+      if(wc<5){
+        showMsg("ocr-msg","⚠️ OCR extracted very little text — verify fields carefully.","msg-err");
+        document.getElementById("ocr-retry-wrap").style.display = "flex";
+      } else {
+        showMsg("ocr-msg","✅ OCR complete ("+wc+" words) — form auto-filled. Verify and correct.","msg-ok");
+      }
       extractAndFill(text);
     } catch(e){
+      clearTimeout(ocrTimeout); clearTimeout(hardStop);
       document.getElementById("ocr-progress").style.display = "none";
-      showMsg("ocr-msg","⚠️ OCR failed: "+e.message+". Enter details manually.","msg-err");
+      document.getElementById("ocr-stop-btn").style.display = "none";
+      showMsg("ocr-msg","⚠️ OCR failed: "+e.message,"msg-err");
+      document.getElementById("ocr-retry-wrap").style.display = "flex";
       showFormManual();
     }
   }
+  window.stopOCR = function(){
+    clearTimeout(ocrTimeout);
+    document.getElementById("ocr-progress").style.display = "none";
+    document.getElementById("ocr-stop-btn").style.display = "none";
+    showMsg("ocr-msg","⏹ OCR stopped — enter manually or retry.","msg-info");
+    document.getElementById("ocr-retry-wrap").style.display = "flex";
+    showFormManual();
+  };
+  window.retryOCR = function(){
+    if(!_lastOCRSource){ toast("No file to retry","toast-err"); return; }
+    document.getElementById("ocr-retry-wrap").style.display = "none";
+    hideMsg("ocr-msg");
+    runOCR(_lastOCRSource);
+  };
 
   // ── CLASSIFICATION ENGINE ─────────────────────────────────────────────────
   function extractAndFill(text){
-    const lines = text.split("\n").map(l=>l.trim()).filter(l=>l.length>3);
-    const lower = text.toLowerCase();
-
-    // ── TYPE detection ──
-    let type = "Workshop";
-    if(/ph\.?d|doctorate|doctoral/i.test(text))                         type = "PhD";
-    else if(/research paper|published|journal|proceedings/i.test(text)) type = "Research Paper";
-    else if(/achievement|award|prize|winner|best/i.test(text))          type = "Achievement";
-    else if(/fdp|faculty development/i.test(text))                      type = "FDP";
-    else if(/conference|symposium/i.test(text))                         type = "Conference";
-    else if(/seminar/i.test(text))                                      type = "Seminar";
-    else if(/workshop/i.test(text))                                     type = "Workshop";
-
-    // ── MODE detection ──
-    let mode = "Attended";
-    if(/organized|coordinator|convener/i.test(text))    mode = "Organized";
-    else if(/presented|presentation/i.test(text))       mode = "Presented";
-    else if(/published/i.test(text))                    mode = "Published";
-    else if(/completed|awarded|conferred/i.test(text))  mode = "Completed";
-    else if(/received|awarded/i.test(text))             mode = "Received";
-    else if(/participated|attended/i.test(text))        mode = "Attended";
-
-    // ── TITLE detection — longest meaningful line ──
-    let title = "";
-    const skipWords = ["certificate","certify","successfully","participation","organized","department","institute","college","university","knowledge","this","that","hereby","completed","attended"];
-    const candidates = lines.filter(l => {
-      const lw = l.toLowerCase();
-      return l.length > 15 && l.length < 120 &&
-             !skipWords.some(s => lw.startsWith(s)) &&
-             !/^\d+$/.test(l) &&
-             !/^[^a-zA-Z]*$/.test(l);
-    });
-    if(candidates.length){
-      // prefer line with "on", "titled", "entitled", or just longest
-      const titleLine = candidates.find(l => /\bon\b|\btitled\b|\bentitled\b/i.test(l)) ||
-                        candidates.reduce((a,b) => a.length > b.length ? a : b);
-      // Clean: remove leading "on ", "titled ", etc.
-      title = titleLine.replace(/^(on|titled|entitled|topic|subject)\s+[":']?\s*/i,"").replace(/[""]/g,'"').trim();
-    }
-
-    // ── ORGANIZER detection ──
-    let org = "";
-    const orgLine = lines.find(l => /(organized|conducted|hosted|sponsored|presented)\s+by/i.test(l));
-    if(orgLine){
-      org = orgLine.replace(/(organized|conducted|hosted|sponsored|presented)\s+by\s*/i,"").trim();
-    } else {
-      // fallback: line containing "institute", "college", "university"
-      const instLine = lines.find(l => /(institute|college|university|iit|nit|vtu)/i.test(l));
-      if(instLine) org = instLine.trim();
-    }
-
-    // ── DATE detection ──
-    let month = "", year = "";
-    // Try patterns: March 2026, March-2026, 15 March 2026, 15/03/2026
-    const datePatterns = [
-      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})\b/i,
-      /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/,
-      /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s,\-]+(\d{4})\b/i,
-    ];
-    const monthNames = {jan:"January",feb:"February",mar:"March",apr:"April",may:"May",jun:"June",
-                        jul:"July",aug:"August",sep:"September",oct:"October",nov:"November",dec:"December"};
-    for(const pat of datePatterns){
-      const m = text.match(pat);
-      if(m){
-        if(m[3]){ // dd/mm/yyyy
-          const mn = parseInt(m[2])-1;
-          month = ["January","February","March","April","May","June","July","August","September","October","November","December"][mn] || "";
-          year  = m[3];
-        } else {
-          const mStr = m[1].toLowerCase().slice(0,3);
-          month = monthNames[mStr] || m[1].charAt(0).toUpperCase()+m[1].slice(1).toLowerCase();
-          year  = m[2];
-        }
-        break;
-      }
-    }
-
-    // ── ACADEMIC YEAR ──
-    let acYear = "2025-26";
-    if(year){
-      const y = parseInt(year);
-      if(y >= 2023 && y <= 2030){
-        // if month is after June, academic year is y to y+1, else y-1 to y
-        const mIdx = ["January","February","March","April","May","June",
-                      "July","August","September","October","November","December"].indexOf(month);
-        if(mIdx >= 6) acYear = y + "-" + String(y+1).slice(2);
-        else          acYear = (y-1) + "-" + String(y).slice(2);
-      }
-    }
-
-    // Use shared classifyText for consistency
     const ex = classifyText(text);
+    if(ex.isGarbage) showMsg("ocr-msg","⚠️ OCR may have picked up non-certificate content. Verify fields carefully.","msg-err");
     setValue("f-type",  ex.type);
     setValue("f-mode",  ex.mode);
     document.getElementById("f-title").value = ex.title;
@@ -1025,29 +978,34 @@ window.addEventListener("fbReady", () => {
     fSel.disabled = false;
     const hint = document.getElementById("faculty-hint");
     if(hint) hint.textContent = currentUser==="HOD" ? "(HOD — assign to any faculty)" : "";
-    document.getElementById("f-filelink").textContent = currentFileUrl ? "🔗 "+currentFileUrl : "No link added";
+    const _fl=document.getElementById("f-filelink");
+    if(_fl){
+      const lnk=persistedDriveLink||currentFileUrl||"";
+      _fl.textContent=lnk?"🔗 "+lnk:"No link — paste Google Drive link above and click 💾";
+      _fl.style.color=lnk?"var(--accent2)":"var(--muted)";
+    }
   }
 
   window.saveDriveLink = function(){
     const link = document.getElementById("drive-link").value.trim();
-    if(!link){ return; }
-    currentFileUrl = link;
+    if(!link){ toast("Paste a Google Drive link first","toast-err"); return; }
+    persistedDriveLink = link;
+    currentFileUrl     = link;
     const st = document.getElementById("drive-link-status");
-    st.textContent = "✅ Link saved — will be stored with activity";
+    st.innerHTML = "✅ <strong>Drive link saved</strong> — will be stored with activity";
     st.style.display = "block";
-    document.getElementById("f-filelink").textContent = "🔗 " + link;
-    // Show form if not already showing
-    if(document.getElementById("form-card").style.display === "none"){
-      showFormManual();
-    }
+    const fl = document.getElementById("f-filelink");
+    if(fl) fl.textContent = "🔗 " + link;
+    toast("🔗 Drive link saved!","toast-ok");
+    if(document.getElementById("form-card").style.display === "none"){ showFormManual(); }
   };
 
   window.showFormManual = function(){
     currentFile = null;
-    if(!currentFileUrl) currentFileUrl = "";
+    currentFileUrl = persistedDriveLink || "";
     document.getElementById("f-faculty").value = currentUser === "HOD" ? "IS001" : currentUser;
     document.getElementById("f-faculty").disabled = false;
-    document.getElementById("f-filelink").textContent = currentFileUrl ? "🔗 "+currentFileUrl : "No link added";
+    document.getElementById("f-filelink").textContent = persistedDriveLink ? "🔗 "+persistedDriveLink : "No link added";
     document.getElementById("form-card").style.display = "block";
   };
 
@@ -1087,7 +1045,8 @@ window.addEventListener("fbReady", () => {
         year:         document.getElementById("f-year").value,
         duration:     document.getElementById("f-duration").value.trim(),
         academicYear: document.getElementById("f-acyear").value,
-        fileUrl:      currentFileUrl,
+        fileUrl:      persistedDriveLink || currentFileUrl || "",
+        participantName: (document.getElementById("f-participant")?.value||"").trim(),
         department:   "ISE",
         timestamp:    Date.now()
       };
@@ -1120,6 +1079,8 @@ window.addEventListener("fbReady", () => {
     document.getElementById("ocr-progress").style.display = "none";
     document.getElementById("cert-file").value = "";
     document.getElementById("bulk-file").value = "";
+    document.getElementById("drive-link").value = "";
+    persistedDriveLink = "";
     document.getElementById("drive-link").value = "";
     document.getElementById("drive-link-status").style.display = "none";
     document.getElementById("f-title").value = "";
@@ -1498,25 +1459,25 @@ window.addEventListener("fbReady", () => {
 
   // Lightweight reset — doesn't clear bulk queue
   function resetFormOnly(){
-    currentFile = null; currentFileUrl = "";
+    currentFile = null;
+    currentFileUrl = persistedDriveLink || "";
     document.getElementById("form-card").style.display    = "none";
     document.getElementById("file-preview").style.display = "none";
     document.getElementById("ocr-raw-wrap").style.display = "none";
     document.getElementById("ocr-progress").style.display = "none";
     document.getElementById("cert-file").value = "";
-    document.getElementById("drive-link").value = "";
-    document.getElementById("drive-link-status").style.display = "none";
     document.getElementById("f-title").value = "";
     document.getElementById("f-org").value = "";
     document.getElementById("f-year").value = "";
     document.getElementById("f-duration").value = "";
     document.getElementById("f-participant").value = "";
     document.getElementById("participant-name-wrap").style.display = "none";
-    document.getElementById("f-filelink").textContent = "No link added";
+    const _fl=document.getElementById("f-filelink");
+    if(_fl) _fl.textContent = persistedDriveLink ? "🔗 "+persistedDriveLink : "No link added";
     hideMsg("ocr-msg"); hideMsg("form-msg");
   }
 
-  // ── CAMERA ─────────────────────────────────────────────────────────────────
+    // ── CAMERA ─────────────────────────────────────────────────────────────────
   let cameraStream = null;
   let snappedBlob  = null;
 
@@ -1585,6 +1546,310 @@ window.addEventListener("fbReady", () => {
     if(cameraStream){ cameraStream.getTracks().forEach(t=>t.stop()); cameraStream=null; }
     document.getElementById("camera-video").srcObject = null;
     document.getElementById("camera-modal").classList.remove("show");
+  };
+
+
+  // ── CLASSIFICATION ENGINE v3 ──────────────────────────────────────────────
+  function classifyText(raw){
+    const wc = raw.split(/\s+/).filter(w=>w.length>2).length;
+    const isGarbage = wc<8||/amazon|flipkart|shopping|cart|buy now|login|sign in|cookie/i.test(raw);
+    const text=raw.replace(/[|\\{}[\]<>]/g," ").replace(/\s+/g," ");
+    const lines=text.split("\n").map(l=>l.trim()).filter(l=>l.length>3);
+    const isCert=/certif|this is to certify|participated|attended|successfully completed/i.test(text);
+    const isApp=/appreciation|convener|coordinator|in-charge|resource.?person|invited.?talk|expert.?lecture|chief.?guest/i.test(text);
+    const isJournal=/journal|issn|volume|issue|doi|published in|accepted for/i.test(text);
+    const isConf=/proceedings|conference|symposium|paper id/i.test(text);
+
+    const TS={"PhD":0,"Research Paper":0,"Achievement":0,"FDP":0,"Conference":0,"Seminar":0,"Workshop":0,"Hackathon":0};
+    if(/\bph\.?d\b/i.test(text))                                       TS["PhD"]+=8;
+    if(/doctorate|doctoral thesis/i.test(text))                        TS["PhD"]+=6;
+    if(isJournal)                                                      TS["Research Paper"]+=6;
+    if(isConf&&/paper|author/i.test(text))                             TS["Research Paper"]+=4;
+    if(/research paper/i.test(text))                                   TS["Research Paper"]+=5;
+    if(/\bdoi\b|\bissn\b|\bisbn\b/i.test(text))                        TS["Research Paper"]+=5;
+    if(!isGarbage&&/\baward\b|\bprize\b|\bwinner\b/i.test(text))       TS["Achievement"]+=5;
+    if(/best.*(?:paper|poster|project)/i.test(text))                   TS["Achievement"]+=6;
+    if(/\bfdp\b/i.test(text))                                          TS["FDP"]+=8;
+    if(/faculty development programme/i.test(text))                    TS["FDP"]+=8;
+    if(/\bsttp\b|short.?term training/i.test(text))                    TS["FDP"]+=7;
+    if(/refresher course/i.test(text))                                 TS["FDP"]+=6;
+    if(/aicte.*(?:fdp|training)/i.test(text))                          TS["FDP"]+=5;
+    if(/international.*conference|national.*conference/i.test(text))   TS["Conference"]+=7;
+    if(/\bconference\b/i.test(text))                                   TS["Conference"]+=5;
+    if(/\bsymposium\b|\bcongress\b/i.test(text))                       TS["Conference"]+=5;
+    if(/\bwebinar\b/i.test(text))                                      TS["Seminar"]+=7;
+    if(/\bseminar\b/i.test(text))                                      TS["Seminar"]+=6;
+    if(/guest.?lecture|expert.?lecture|invited.?talk/i.test(text))     TS["Seminar"]+=6;
+    if(/national.*workshop|international.*workshop/i.test(text))       TS["Workshop"]+=7;
+    if(/\bworkshop\b/i.test(text))                                     TS["Workshop"]+=5;
+    if(/\bhackathon\b/i.test(text))                                    TS["Hackathon"]+=8;
+    let type=Object.entries(TS).reduce((a,b)=>b[1]>a[1]?b:a)[0];
+    if(TS[type]===0)type="Workshop";
+
+    const MS={"Organized":0,"Resource Person":0,"Presented":0,"Attended":0,"Completed":0,"Published":0,"Received":0};
+    if(/\bconvener\b/i.test(text))                                     MS["Organized"]+=10;
+    if(/\bcoordinator\b/i.test(text))                                  MS["Organized"]+=9;
+    if(/organizing.*committee/i.test(text))                            MS["Organized"]+=8;
+    if(/\bin.?charge\b/i.test(text))                                   MS["Organized"]+=7;
+    if(isApp&&/organized.*by.*department/i.test(text))                 MS["Organized"]+=8;
+    if(/\bresource.?person\b/i.test(text))                             MS["Resource Person"]+=12;
+    if(/invited.?speaker|expert.?speaker/i.test(text))                 MS["Resource Person"]+=10;
+    if(/\bkeynote\b/i.test(text))                                      MS["Resource Person"]+=10;
+    if(/delivered.*(?:talk|lecture|session)/i.test(text))              MS["Resource Person"]+=8;
+    if(/presented.*(?:paper|poster)/i.test(text))                      MS["Presented"]+=9;
+    if(/oral.*presentation|paper.*presentation/i.test(text))           MS["Presented"]+=8;
+    if(/participated.*in|attended.*(?:the|a)/i.test(text))             MS["Attended"]+=5;
+    if(/successfully.*(?:completed|participated)/i.test(text))         MS["Attended"]+=4;
+    if(isCert&&!isApp)                                                 MS["Attended"]+=2;
+    if(TS["PhD"]>5)                                                    MS["Completed"]+=8;
+    if(/(?:paper|article).*(?:published|accepted)/i.test(text))        MS["Published"]+=8;
+    if(isJournal&&/published/i.test(text))                             MS["Published"]+=6;
+    if(/received.*award|awarded.*prize/i.test(text))                   MS["Received"]+=7;
+    MS["Organized"]*=1.4; MS["Resource Person"]*=1.3;
+    let mode=Object.entries(MS).reduce((a,b)=>b[1]>a[1]?b:a)[0];
+    if(MS[mode]===0)mode="Attended";
+
+    // ── TITLE extraction v4 — multi-strategy with scoring ──
+    const SS=["certificate","certif","this is to","hereby","successfully","participation",
+              "department of","organized by","conducted by","dated","date:","sincerely",
+              "regards","principal","director","head of","appreciation","letter","dear ",
+              "address:","www.","http","page ","©","all rights","powered by","follow us",
+              "terms","privacy","click","subscribe","download","login","sign in","shop"];
+    const SC=["signature","seal","stamp","registrar","all rights","amazon","flipkart",
+              "shopping","cart","checkout","payment","delivery","price","₹","$","€"];
+    let title="";
+    const tc=lines.filter(l=>{
+      const lw=l.toLowerCase().trim();
+      const wn=l.split(/\s+/).filter(w=>w.length>1).length;
+      const alphaRatio=(l.match(/[A-Za-z]/g)||[]).length/Math.max(l.length,1);
+      return l.length>=10&&l.length<=130&&wn>=2&&wn<=18
+        &&!SS.some(s=>lw.startsWith(s))
+        &&!SC.some(s=>lw.includes(s))
+        &&!/^\d{1,2}[\/-]/.test(l)       // starts with date
+        &&!/^[^A-Za-z]{0,4}$/.test(l)     // only symbols
+        &&alphaRatio>0.55                 // mostly letters
+        &&!/[|{}\\<>@#$%^*=+~\`]{2,}/.test(l); // multiple special chars
+    });
+
+    if(tc.length){
+      // Strategy 1: explicit label — "Title:", "Topic:", "Subject:", "On:", "Entitled:"
+      const exp=tc.find(l=>/^(?:title|topic|subject|on|entitled|titled|regarding)[:\s]/i.test(l));
+      if(exp){
+        title=exp.replace(/^(?:title|topic|subject|on|entitled|titled|regarding)[:\s]*["'\s]*/i,"").trim();
+      }
+      // Strategy 2: ALL CAPS line (common in certificates)
+      if(!title){
+        const caps=tc.filter(l=>l===l.toUpperCase()&&l.length>12&&l.length<100&&/[A-Z]{3,}/.test(l)&&!/^[A-Z0-9\s]{1,4}$/.test(l));
+        if(caps.length){
+          // prefer the one that matches event type
+          const ev=caps.find(l=>/WORKSHOP|SEMINAR|FDP|CONFERENCE|WEBINAR|PROGRAMME|TRAINING|HACKATHON/i.test(l));
+          const chosen=ev||caps[0];
+          title=chosen.charAt(0)+chosen.slice(1).toLowerCase();
+        }
+      }
+      // Strategy 3: line with "workshop/fdp/... on [Title]"
+      if(!title){
+        const kl=tc.find(l=>/(?:workshop|fdp|seminar|conference|webinar|programme|training|hackathon)\s+on\s+[\w"]/i.test(l));
+        if(kl){
+          const m=kl.match(/(?:workshop|fdp|seminar|conference|webinar|programme|training|hackathon)\s+on\s+(.+)/i);
+          if(m) title=m[1].replace(/["']/g,"").trim();
+        }
+      }
+      // Strategy 4: Title-case line with 3-10 words (most certificates)
+      if(!title){
+        const tc_scored = tc.map(l=>{
+          let score=0;
+          const words=l.split(/\s+/);
+          const titleCased=words.filter(w=>w.length>1&&w[0]===w[0].toUpperCase()&&w[0]!==w[0].toLowerCase()).length;
+          score += titleCased/words.length*10; // ratio of title-cased words
+          score += words.length>=3&&words.length<=10 ? 3 : 0;
+          score += /\b(on|using|with|for|in|of)\b/i.test(l) ? 1 : 0; // connecting words
+          score += l.length>=20&&l.length<=80 ? 2 : 0;
+          return {l,score};
+        });
+        tc_scored.sort((a,b)=>b.score-a.score);
+        if(tc_scored[0]&&tc_scored[0].score>4) title=tc_scored[0].l;
+      }
+      // Strategy 5: longest candidate as last resort
+      if(!title) title=tc.reduce((a,b)=>a.length>b.length?a:b,"");
+
+      // Clean title
+      title=title
+        .replace(/^["'\-:\s]+/,"")
+        .replace(/["'\s]+$/,"")
+        .replace(/\s+/g," ")
+        .replace(/^(on|titled|entitled|regarding)\s+/i,"")
+        .trim();
+      // Cap at 120 chars
+      if(title.length>120) title=title.slice(0,117)+"...";
+    }
+
+    let org="";
+    // Strategy 1: explicit "organized/conducted/hosted by X"
+    const orgPats=[
+      /(organized|conducted|hosted|arranged|sponsored|presented)\s+by\s*[:\-]?\s*([^\n.;]{5,100})/i,
+      /(?:in association with|in collaboration with)\s+([^\n.;]{5,100})/i,
+      /(?:under the aegis of|supported by)\s+([^\n.;]{5,100})/i,
+    ];
+    for(const p of orgPats){
+      const m=text.match(p);
+      if(m){
+        let c=(m[2]||m[1]).trim();
+        // stop at common noise words
+        c=c.split(/\b(?:on|dated|during|held|from|for|at|the department|faculty|staff)\b/i)[0].trim();
+        c=c.replace(/^[,;:\-\s]+/,"").replace(/[,;:\-\s]+$/,"").trim().slice(0,100);
+        if(c.length>5){org=c;break;}
+      }
+    }
+    // Strategy 2: line with institution keywords (not starting with department/school)
+    if(!org){
+      const instLine=lines.find(l=>{
+        const lw=l.toLowerCase();
+        return /(institute|college|university|iit|nit|vtu|iste|ieee|acm)/i.test(l)
+          &&l.length>8&&l.length<120
+          &&!lw.startsWith("department")
+          &&!lw.startsWith("school of")
+          &&!/[|{}\\<>@#$%^*]/.test(l);
+      });
+      if(instLine) org=instLine.trim().slice(0,100);
+    }
+    org=org.replace(/^[,;:\-\s]+/,"").replace(/[,;:\-\s]+$/,"").trim();
+
+    const MF=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const MN={jan:"January",feb:"February",mar:"March",apr:"April",may:"May",jun:"June",jul:"July",aug:"August",sep:"September",oct:"October",nov:"November",dec:"December"};
+    let month="",year="";
+    const DP=[
+      /\b(january|february|march|april|may|june|july|august|september|october|november|december)[,\s]+([12]\d{3})\b/i,
+      /\b\d{1,2}(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)[,\s]+([12]\d{3})/i,
+      /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s,\-\.]+([12]\d{3})\b/i,
+      /\b(\d{1,2})[\/\-](\d{1,2})[\/\-]([12]\d{3})\b/,
+    ];
+    for(const p of DP){
+      const m=raw.match(p);
+      if(m){
+        if(m[3]&&/\d{4}/.test(m[3])){year=m[3];const ms=(m[2]||"").toLowerCase().slice(0,3);month=MN[ms]||(MF.find(mo=>mo.toLowerCase().startsWith(ms))||"");}
+        else{const ms=m[1].toLowerCase().slice(0,3);month=MN[ms]||m[1].charAt(0).toUpperCase()+m[1].slice(1).toLowerCase();year=m[2];}
+        if(year&&parseInt(year)>1990&&parseInt(year)<2040)break;else{month="";year="";}
+      }
+    }
+    let acYear="2025-26";
+    if(year){const y=parseInt(year);if(y>=2018&&y<=2035){const mi=MF.indexOf(month);acYear=(mi>=6)?y+"-"+String(y+1).slice(2):(y-1)+"-"+String(y).slice(2);}}
+
+    const FN={IS001:["Neelakanth Karekar","Neelakanth","Karekar","nkarekar"],IS002:["Pandurang Upparamani","Pandurang","Upparamani","upparamani"],IS003:["Sudhir Madi","sudhirmadi","Sudhir"],IS004:["Kadayya Mathad","Kadayya","Mathad","mathadks"],IS005:["Anusha Chogund","Anusha","Chogund","apcogund"],IS006:["Rakesh Kadkol","Rakesh","Kadkol","rjkadkol"],IS007:["Vaibhav Chavan","Vaibhav","Chavan"],IS008:["Asharani","Asha Rani","Asha"]};
+    let detectedFaculty="",unknownName="";
+    for(const[id,ns]of Object.entries(FN)){if(ns.some(n=>raw.toLowerCase().includes(n.toLowerCase()))){detectedFaculty=id;break;}}
+    if(!detectedFaculty){
+      const NP=[/certif[yi](?:ing|es)?\s+that\s+(?:Mr\.?|Ms\.?|Mrs\.?|Dr\.?|Prof\.?)?\s*([A-Z][a-z]+(\s+[A-Z][a-z]+){1,3})/,/(?:Mr\.?|Ms\.?|Mrs\.?|Dr\.?|Prof\.)\s+([A-Z][a-z]+(\s+[A-Z][a-z]+){1,3})/,/awarded\s+to\s+(?:Mr\.?|Ms\.?|Dr\.?)?\s*([A-Z][a-z]+(\s+[A-Z][a-z]+){1,3})/];
+      for(const np of NP){const m=raw.match(np);if(m&&m[1]&&m[1].length>4&&m[1].length<50){unknownName=m[1].trim();break;}}
+    }
+    return{type,mode,title,org,month,year,acYear,detectedFaculty,unknownName,isGarbage};
+  }
+
+  // ── BULK AUTO-SAVE ─────────────────────────────────────────────────────────
+  async function bulkAutoProcess(file){
+    try{
+      let src;
+      if(file.type==="application/pdf"){
+        const buf=await file.arrayBuffer();
+        const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+        const pg=await pdf.getPage(1);
+        const vp=pg.getViewport({scale:1.5});
+        const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;
+        await pg.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;src=cv;
+      }else{
+        const img=new Image();img.src=URL.createObjectURL(file);
+        await new Promise(r=>{img.onload=r;img.onerror=r;});src=img;
+      }
+      const res=await Tesseract.recognize(src,"eng",{logger:()=>{}});
+      const ex=classifyText(res.data.text);
+      let fid=currentUser==="HOD"?"IS001":currentUser,fn=FACULTY[fid]||"";
+      if(ex.detectedFaculty){fid=ex.detectedFaculty;fn=FACULTY[fid]||"";}
+      await addDoc(collection(db,COL),{facultyId:fid,facultyName:fn,type:ex.type,mode:ex.mode,title:ex.title||"(review needed)",organizer:ex.org,month:ex.month,year:ex.year,duration:"",academicYear:ex.acYear,fileUrl:persistedDriveLink||"",participantName:ex.unknownName||"",department:"ISE",bulkImported:true,sourceFile:file.name,timestamp:Date.now()});
+      const st=document.getElementById("bi-st-"+bulkIdx);if(st){st.textContent="✅ Saved";st.className="bi-status bi-done";}
+    }catch(e){const st=document.getElementById("bi-st-"+bulkIdx);if(st){st.textContent="⚠️ Error";st.className="bi-status bi-skip";}}
+    bulkIdx++;await new Promise(r=>setTimeout(r,400));processBulkItem();
+  }
+
+  // ── HOD DEPARTMENT REPORT ──────────────────────────────────────────────────
+  window.exportDeptReport = function(){
+    if(!allActivities.length){toast("No activities yet","toast-info");return;}
+    const FLIST=Object.keys(FACULTY).filter(k=>k!=="HOD");
+    const byF={};FLIST.forEach(k=>byF[k]=[]);
+    allActivities.forEach(a=>{if(byF[a.facultyId])byF[a.facultyId].push(a);});
+    const wb=XLSX.utils.book_new();
+    const mk=(fill,sz,bold,col)=>({font:{name:"Arial",sz,bold:!!bold,color:{rgb:col||"000000"}},fill:{fgColor:{rgb:fill},patternType:"solid"},alignment:{horizontal:"center",vertical:"center",wrapText:true}});
+    const mkL=(fill,sz)=>({font:{name:"Arial",sz,color:{rgb:"000000"}},fill:{fgColor:{rgb:fill},patternType:"solid"},alignment:{horizontal:"left",vertical:"center",wrapText:true}});
+    const C=(ws,r,c,v,s)=>ws[XLSX.utils.encode_cell({r,c})]={v,t:typeof v==="number"?"n":"s",s:s||{}};
+    const MR=(ws,mg,r,c0=0,c1=8)=>mg.push({s:{r,c:c0},e:{r,c:c1}});
+
+    // All-faculty combined sheet
+    const ws={},mg=[];let r=0;
+    C(ws,r,0,"KLS Gogte Institute of Technology",mk("1F3864",13,true,"FFFFFF"));MR(ws,mg,r);r++;
+    C(ws,r,0,"Department of Information Science & Engineering — Faculty Activity Report",mk("2E4D8A",11,true,"FFFFFF"));MR(ws,mg,r);r++;
+    C(ws,r,0,"Generated: "+new Date().toLocaleString(),{font:{name:"Arial",sz:8,italic:true,color:{rgb:"888888"}},alignment:{horizontal:"right"}});MR(ws,mg,r);r++;r++;
+    ["#","Faculty","Type","Mode","Title","Organizer","Month/Year","Ac.Year","Cert"].forEach((h,c)=>C(ws,r,c,h,mk("2B4590",9,true,"FFFFFF")));r++;
+
+    let idx=1,odd=true,mS={},tS={};
+    FLIST.forEach(fid=>{
+      const fa=byF[fid];if(!fa.length)return;
+      C(ws,r,0,FACULTY[fid]+" ("+fa.length+" activities)",mk("D6E4F0",10,true,"1F3864"));MR(ws,mg,r);r++;
+      fa.sort((a,b)=>(a.type||"").localeCompare(b.type||"")).forEach(a=>{
+        const bg=odd?"FFFFFF":"EEF2FF";
+        C(ws,r,0,idx++,mk(bg,9,false,"000000"));
+        C(ws,r,1,(a.facultyName||"").replace("Prof.","").trim(),mkL(bg,9));
+        C(ws,r,2,a.type||"",mk(bg,9,false,"000000"));
+        C(ws,r,3,a.mode||"",mk(bg,9,false,"000000"));
+        C(ws,r,4,(a.bulkImported?"[⚡] ":"")+(a.title||""),mkL(bg,9));
+        C(ws,r,5,a.organizer||"",mkL(bg,9));
+        C(ws,r,6,[a.month,a.year].filter(Boolean).join(" "),mk(bg,9,false,"000000"));
+        C(ws,r,7,a.academicYear||"",mk(bg,9,false,"000000"));
+        C(ws,r,8,a.fileUrl?"📎":"—",mk(bg,9,false,"000000"));
+        mS[a.mode]=(mS[a.mode]||0)+1;
+        tS[a.type]=(tS[a.type]||0)+1;
+        r++;odd=!odd;
+      });
+    });
+    // Summary
+    r++;
+    C(ws,r,0,"TOTAL: "+allActivities.length+" activities",mk("1F3864",10,true,"FFFFFF"));MR(ws,mg,r,0,3);
+    let tc=4;Object.entries(tS).sort((a,b)=>b[1]-a[1]).forEach(([t,n])=>{if(tc<9)C(ws,r,tc++,t+":"+n,mk("2E4D8A",9,true,"FFFFFF"));});r++;
+    C(ws,r,0,"MODE:",mk("375A8C",9,true,"FFFFFF"));MR(ws,mg,r,0,1);
+    let mc=2;Object.entries(mS).sort((a,b)=>b[1]-a[1]).forEach(([m,n])=>{if(mc<9)C(ws,r,mc++,m+":"+n,mk("375A8C",9,false,"FFFFFF"));});r++;
+    ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:r-1,c:8}});
+    ws["!merges"]=mg;
+    ws["!cols"]=[{wch:4},{wch:22},{wch:16},{wch:16},{wch:40},{wch:30},{wch:12},{wch:10},{wch:8}];
+    ws["!rows"]=[{hpt:20},{hpt:18},{hpt:16},{hpt:6},{hpt:22}];
+    XLSX.utils.book_append_sheet(wb,ws,"All Faculty");
+
+    // Individual sheets
+    FLIST.forEach(fid=>{
+      const fa=byF[fid];if(!fa.length)return;
+      const ws2={},m2=[];let r2=0;
+      C(ws2,r2,0,"KLS Gogte Institute of Technology",mk("1F3864",13,true,"FFFFFF"));m2.push({s:{r:r2,c:0},e:{r:r2,c:7}});r2++;
+      C(ws2,r2,0,FACULTY[fid]+" — Activity Report",mk("2E4D8A",11,true,"FFFFFF"));m2.push({s:{r:r2,c:0},e:{r:r2,c:7}});r2++;r2++;
+      ["#","Type","Mode","Title","Organizer","Month/Year","Ac.Year","Cert"].forEach((h,c)=>C(ws2,r2,c,h,mk("2B4590",9,true,"FFFFFF")));r2++;
+      let i2=1,o2=true;
+      fa.sort((a,b)=>(a.type||"").localeCompare(b.type||"")).forEach(a=>{
+        const bg=o2?"FFFFFF":"EEF2FF";
+        C(ws2,r2,0,i2++,mk(bg,9,false,"000000"));
+        C(ws2,r2,1,a.type||"",mk(bg,9,false,"000000"));
+        C(ws2,r2,2,a.mode||"",mk(bg,9,false,"000000"));
+        C(ws2,r2,3,(a.bulkImported?"[⚡] ":"")+(a.title||""),mkL(bg,9));
+        C(ws2,r2,4,a.organizer||"",mkL(bg,9));
+        C(ws2,r2,5,[a.month,a.year].filter(Boolean).join(" "),mk(bg,9,false,"000000"));
+        C(ws2,r2,6,a.academicYear||"",mk(bg,9,false,"000000"));
+        C(ws2,r2,7,a.fileUrl?"📎":"—",mk(bg,9,false,"000000"));
+        r2++;o2=!o2;
+      });
+      r2++;C(ws2,r2,0,"Total: "+fa.length,{font:{name:"Arial",sz:9,bold:true},alignment:{horizontal:"left"}});m2.push({s:{r:r2,c:0},e:{r:r2,c:7}});
+      ws2["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:r2,c:7}});
+      ws2["!merges"]=m2;
+      ws2["!cols"]=[{wch:4},{wch:16},{wch:16},{wch:42},{wch:30},{wch:12},{wch:10},{wch:8}];
+      const sn=FACULTY[fid].replace("Prof.","").trim().split(" ").slice(0,2).join("_").slice(0,31);
+      XLSX.utils.book_append_sheet(wb,ws2,sn);
+    });
+    XLSX.writeFile(wb,"FAMS_DeptReport_"+new Date().toISOString().slice(0,10)+".xlsx");
+    toast("📥 Dept report: "+wb.SheetNames.length+" sheets downloaded!","toast-ok");
   };
 
 }); // end fbReady
